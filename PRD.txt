@@ -1,0 +1,406 @@
+PRODUCT REQUIREMENTS DOCUMENT
+Corporate Lead Intelligence & Outreach Automation System
+Version
+Date
+Build Target
+Status
+Use Case
+1.1 — MVP (React + Sheets Hybrid)
+April 2026
+10 days
+Draft — For Internal Review
+B2B Gifting & Employee Engagement
+1. Executive Summary
+The Corporate Lead Intelligence & Outreach Automation System is an internal B2B sales tool that automates the end-to-end process of identifying corporate prospects, finding their key decision-makers, and reaching out with AI-personalized pitches.
+A user inputs a geographic 
+pincode
+ via a React dashboard, and the system delivers a ready-to-send outreach campaign to relevant companies in that area, logging all activities directly into Google Sheets. This eliminates hours of manual research per sales cycle. The system is purpose-built for the company's B2B gifting and employee engagement vertical, targeting HR Managers, Marketing Heads, and Admin/Procurement leads at companies within a defined radius.
+Metric
+Target
+Build timeline
+10 days (MVP)
+Leads per 
+pincode
+ run
+30–100 companies
+Contacts per company
+1–3 decision-makers
+AI model
+Gemini 2.5 Flash-Lite (free tier)
+Email infrastructure
+SendGrid (SMTP)
+Estimated MVP cost/month
+₹0 – ₹1,000
+2. Problem Statement
+Currently, the sales team identifies and reaches out to B2B prospects manually — searching Google Maps, LinkedIn, and company directories to find relevant businesses, then individually researching contacts and crafting outreach messages.
+This process is:
+Time-intensive:
+ 2–4 hours per campaign preparation.
+Inconsistent:
+ Pitch quality and targeting vary by individual.
+Unscalable:
+ Volume is limited by manual bandwidth.
+Untracked:
+ No centralized visibility into outreach status or results.
+This system replaces the manual pipeline with an automated, AI-driven workflow that runs in minutes.
+3. Goals & 
+Non-Goals
+3.1 Goals (MVP — 10 Days)
+Provide a minimal React dashboard for the sales team to trigger 
+pincode
+ runs and view fetched companies.
+Automatically discover companies within a given 
+pincode
+ area using the Google Maps API.
+Extract verified decision-maker contacts via Hunter.io or Apollo.io API.
+Generate AI-personalized outreach pitches using Gemini 2.5 Flash-Lite.
+Send bulk personalized emails via SendGrid with status tracking.
+Store all leads, contacts, and outreach history directly in Google Sheets for instant team visibility and zero database overhead.
+3.2 Non-Goals (Post-MVP)
+WhatsApp automation — WhatsApp Business API approval takes 1–3 weeks; out of scope for v1.
+LinkedIn scraping — Fragile, legally grey, and blocked by anti-bot systems.
+Lead scoring system — To be added in Phase 2.
+MCA database integration — Complex and slow; deferred to Phase 3.
+AI follow-up automation — Manual replies preferred until reply rates are understood.
+PostgreSQL deployment — Deferred entirely in 
+favor
+ of Google Sheets.
+4. User Personas
+Persona
+Role
+Primary Need
+Sales Operator
+Internal team member running campaigns
+Trigger a 
+pincode
+ run via the React UI and get a ready outreach list.
+Sales Manager
+Reviewing outreach performance
+Visibility into emails sent, opens, and replies directly inside Google Sheets.
+Prospect
+Decision-maker receiving emails
+Relevant, professional pitch with a clear value proposition.
+5. System Architecture
+The system runs as a sequential pipeline triggered by a 
+pincode
+ input on the frontend. The backend handles processing and hands off structured data to the next module, ultimately pushing the final data to Google Sheets.
+#
+Module
+Input
+Output
+1
+Company Discovery
+Pincode
+ (e.g., 400001)
+List of company names, websites, industries.
+2
+Contact Intelligence
+Company name + domain
+Decision-maker name, role, email.
+3
+Data Cleaning
+Raw scraped records
+Deduplicated, validated dataset.
+4
+AI Pitch Gen
+Company + contact + role
+Personalized email body per contact.
+5
+Email Outreach
+Pitch + contact email
+Email sent, status logged.
+6
+Tracking & Storage
+All module outputs
+Data appended to Google Sheets via 
+gspread
+.
+6. Feature Specifications
+6.1 Module 1 — Company Discovery Engine
+Converts a 
+pincode
+ to a list of relevant businesses, filtering out noise like restaurants and retail.
+Data Sources:
+ Google Geocoding API (converts 
+pincode
+ to coordinates), Google Maps Places API (fetches nearby businesses).
+Filtering Logic:
+ Include offices, companies, firms, corporate HQs. Exclude restaurants, salons, retail, hospitals, schools. Must have a Google Maps listing.
+6.2 Module 2 — Contact Intelligence Engine
+Finds verified decision-makers within each discovered company using third-party lookup APIs (replacing LinkedIn scraping).
+Target Roles (Priority):
+ HR Manager/CHRO, Marketing Head/CMO, Admin/Procurement Head.
+Lookup Strategy:
+ Hunter.io API (primary), Apollo.io API (fallback), Email pattern generation (last resort).
+6.3 Module 3 — Data Cleaning & Normalization
+Deduplication:
+ Hash on company name + domain; skip duplicate records.
+Standardization:
+ Lowercase names, strip special characters.
+Validation:
+ Regex format check + MX record verification on domain.
+Confidence Filtering:
+ Skip contacts with Hunter.io confidence below 50.
+6.4 Module 4 — AI Pitch Generation Engine
+Generates a fully personalized cold outreach email using Gemini 2.5 Flash-Lite.
+Rate limit:
+ 4-second delay between API calls to stay under 15 RPM.
+Caching:
+ Hash prompt inputs; skip API call if cached result exists.
+Prompt Strategy:
+ Instructs the model to write under 120 words, mention specific gifting/employee engagement use cases, and end with a soft CTA.
+6.5 Module 5 — Email Outreach Engine
+Infrastructure:
+ SendGrid API with dedicated company domain (SPF/DKIM/DMARC configured).
+Warm-up:
+ Must send 20–50 emails/day for the first week before scaling to 300/day max.
+Compliance:
+ Mandatory unsubscribe link in every email footer.
+6.6 Module 6 — Tracking & Storage (Google Sheets)
+Metrics Tracked:
+ Emails sent, delivery status, open rate, reply rate.
+Storage:
+ All records are appended as new rows into dedicated tabs in a central Google Sheet.
+Duplicate Prevention:
+ Backend script runs a 
+get_all
+ check against the Sheet to skip contacts emailed in the last 90 days.
+7. Google Sheets Structure (Database Replacement)
+7.1 Tab: Companies
+Column Header
+Notes
+ID
+Auto-generated UUID
+Company Name
+From Google Maps
+Industry
+Inferred from category
+Location
+Area / locality
+Website
+Domain used for contact lookup
+Date Added
+Timestamp
+7.2 Tab: Contacts
+Column Header
+Notes
+Contact ID
+Auto-generated UUID
+Company ID
+References Companies Tab
+Full Name
+Decision-maker name
+Role
+Job title
+Email
+Verified or generated
+Confidence Score
+0–100 from Hunter.io
+7.3 Tab: Outreach Logs
+Column Header
+Notes
+Campaign ID
+Groups emails from one 
+pincode
+ run
+Contact ID
+References Contacts Tab
+Subject Line
+Email subject used
+AI Pitch Body
+Full text generated by Gemini
+Status
+Sent / Delivered / Bounced
+Opened
+Updated via SendGrid pixel
+Timestamp
+Time email was dispatched
+8. Tech Stack
+Layer
+Technology
+Rationale
+Backend
+Python + 
+FastAPI
+Async support, handles the heavy lifting of API routing, scraping, and AI generation.
+Frontend
+React.js (Tailwind CSS, Radix UI)
+Clean UI for sales operators to input 
+pincodes
+ and preview fetched companies before outreach.
+Database / CRM
+Google Sheets API (
+gspread
+)
+Replaces PostgreSQL. Permanent, highly visible storage for leads and outreach status.
+Job Queue
+Celery + Redis
+Rate-limited batch processing for API calls and email sending.
+AI Model
+Gemini 2.5 Flash-Lite
+Free tier (1,000 RPD); sufficient for pitch generation tasks.
+Email
+SendGrid API
+Delivery analytics, bounce handling, unsubscribe management.
+Company Data
+Google Maps Places API
+Reliable, structured business data with location filtering.
+Contact Data
+Hunter.io / Apollo.io
+Verified emails; avoids fragile LinkedIn scraping.
+Deployment
+Vercel
+ (Frontend) + Simple VPS (Backend)
+Fast deployment for React; backend runs to execute logic and populate Sheets.
+9. 10-Day Implementation Plan
+Phase 1 — Days 1–3: Foundation & Discovery
+Day
+Tasks
+Day 1
+Project setup (
+FastAPI
+ + Google Sheets API service account). Configure domain DNS (SPF, DKIM, DMARC) and begin domain warm-up. Initialize basic React frontend scaffold.
+Day 2
+Integrate Google Maps Places API & Geocoding API. Implement company filtering logic. Set up 'Companies' tab in Google Sheets.
+Day 3
+Build 
+FastAPI
+ endpoint for company discovery. Connect React frontend to take 
+pincode
+ input and render the fetched company list in a data table.
+Phase 2 — Days 4–7: Contacts, AI & Email
+Day
+Tasks
+Day 4
+Integrate Hunter.io API. Set up 'Contacts' tab in Google Sheets. Update backend to append contact data to the Sheets.
+Day 5
+Integrate Gemini 2.5 Flash-Lite. Build pitch generation endpoint with 4-second rate limiter and prompt caching.
+Day 6
+Integrate SendGrid. Build email template with unsubscribe footer. Wire pitch → template → send pipeline.
+Day 7
+Set up 'Outreach Logs' tab in Sheets. Connect the React frontend "Launch Campaign" button to trigger the end-to-end backend flow and log outputs.
+Phase 3 — Days 8–10: Frontend Polish & Hand-off
+Day
+Tasks
+Day 8
+Refine React dashboard: add loading states, progress indicators for the campaign run, and formatting for the results table.
+Day 9
+Implement backend duplicate outreach prevention (90-day cooldown via 
+get_all
+ checks from Sheets). Add basic error handling for API limits.
+Day 10
+Deploy Frontend (
+Vercel
+) and Backend. End-to-end QA with real 
+pincode
+ (Mumbai). Fix bugs. Internal handoff.
+10. Risks & Mitigations
+Level
+Risk
+Impact
+Mitigation
+HIGH
+Emails land in spam
+System unusable
+Configure SPF/DKIM/DMARC on Day 1. Warm up domain gradually. Use SendGrid.
+HIGH
+High email bounce rate
+SendGrid account suspended
+Only send to contacts with Hunter confidence >50. Validate email format.
+HIGH
+Gemini free tier exhausted
+Pitch generation stops
+Use Flash-Lite (1,000 RPD). Cache repeated prompts. Add fallback static template.
+MED
+Google Sheets API Quota limit
+Appending records fails
+Batch row insertions. Implement exponential backoff in the backend script.
+MED
+Hunter.io credits exhausted
+No contact data
+Set daily Hunter credit budget limit. Apollo.io as fallback.
+LOW
+Legal / spam complaints
+Domain blacklisted
+Mandatory unsubscribe link. Honor opt-outs immediately.
+11. API Cost Model
+Service
+Free Tier
+MVP Usage
+Estimated Cost
+Google Maps Places API
+$200 credit/month
+~500 calls/month
+₹0 (within credit)
+Gemini 2.5 Flash-Lite
+1,000 
+req
+/day free
+~200 
+req
+/day
+₹0 (within free tier)
+Hunter.io
+25 searches/month free
+25–100 searches
+₹0–₹1,500
+SendGrid
+100 emails/day free
+100–300 emails/day
+₹0–₹800
+Vercel
+ (Frontend)
+Hobby tier
+Standard
+₹0
+Basic VPS (Backend)
+N/A
+1 small droplet
+~₹500
+Total
+₹500 – ₹2,800/month
+12. Success Metrics
+The MVP will be considered successful if, within the first 2 weeks of internal use, it achieves:
+Metric
+Baseline (Manual)
+MVP Target
+Time to prepare a campaign
+2–4 hours
+< 15 minutes
+Companies discovered per run
+10–20 (manual)
+30–100
+Email deliverability rate
+Unknown
+> 90%
+Email open rate
+Unknown
+> 25%
+Bounce rate
+Unknown
+< 5%
+13. Future Roadmap (Post-MVP)
+Phase 2 — Month 2
+WhatsApp outreach via Twilio/WhatsApp Business API (pending approval).
+Lead scoring: rank companies by size, hiring activity, and industry fit.
+Apollo.io deep integration for richer contact profiles.
+Phase 3 — Month 3+
+AI-driven follow-up automation (reply detection + auto follow-up after 3 days).
+Replace Google Sheets with a robust CRM/PostgreSQL database if volume exceeds Sheets limitations.
+MCA database integration for verified company registration data.
+14. Open Questions
+#
+Question
+Notes
+1
+Which Hunter.io plan will be purchased for contact lookup?
+To decide based on monthly lead volume needs.
+2
+What sending domain will be used for outreach emails?
+Must be configured on Day 1 to allow warm-up time.
+3
+Who approves email content before campaigns go live?
+Recommend sales manager sign-off for the first 3 runs.
+4
+Who "owns" the master Google Sheet?
+Need a dedicated internal admin account to own the sheet and issue API credentials.
