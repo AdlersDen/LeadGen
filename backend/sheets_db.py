@@ -28,9 +28,17 @@ class SheetsDB:
                 return False
                 
             try:
-                self.client = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
+                service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+                if service_account_json:
+                    import json
+                    info = json.loads(service_account_json)
+                    self.client = gspread.service_account_from_dict(info)
+                    logger.info("Connected to Sheets via GOOGLE_SERVICE_ACCOUNT_JSON env var.")
+                else:
+                    self.client = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
+                    logger.info(f"Connected to Sheets via {SERVICE_ACCOUNT_FILE}.")
+                
                 self.doc = self.client.open_by_key(SHEET_ID)
-                logger.info("Successfully connected to Google Sheets DB.")
                 return True
             except Exception as e:
                 logger.error(f"Failed to connect to Google Sheets: {e}", exc_info=True)
