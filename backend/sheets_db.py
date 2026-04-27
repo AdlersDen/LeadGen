@@ -95,6 +95,14 @@ class SheetsDB:
         ws = self._get_worksheet("Companies")
         return ws.get_all_records() if ws else []
 
+    def get_pending_companies(self):
+        """Returns only companies where Contacts Extracted is not 'Yes'."""
+        all_companies = self.get_companies()
+        return [
+            c for c in all_companies
+            if str(c.get("Contacts Extracted", "")).strip().lower() != "yes"
+        ]
+
     def add_company(self, company_data: dict):
         ws = self._get_worksheet("Companies")
         if not ws:

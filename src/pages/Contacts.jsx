@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Users, Search, UserPlus, Loader2 } from 'lucide-react';
+import { Users, Search, UserPlus, Loader2, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 export default function Contacts() {
   const [search, setSearch] = useState('');
   const [showFinder, setShowFinder] = useState(false);
-  const [bulkLimit, setBulkLimit] = useState('5');
+  const [processLimit, setProcessLimit] = useState('5');
   const queryClient = useQueryClient();
 
   const { data: contacts = [], isLoading } = useQuery({
@@ -22,32 +22,53 @@ export default function Contacts() {
     queryFn: () => apiClient.get('/contacts'),
   });
 
-  const { data: companies = [] } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => apiClient.get('/companies'),
+  // Fetch pending companies only when the modal is open
+  const { data: pendingCompanies = [], isLoading: isPendingLoading } = useQuery({
+    queryKey: ['companies-pending'],
+    queryFn: () => apiClient.get('/companies/pending'),
+    enabled: showFinder,      // Only fires when the modal is open
+    staleTime: 0,             // Always re-fetch fresh data when modal opens
   });
 
-  const bulkFindContactsMutation = useMutation({
-    mutationFn: async (limit) => {
-      return apiClient.post('/contacts/bulk-find', { limit: parseInt(limit, 10) });
+  const extractMutation = useMutation({
+    mutationFn: async (company_ids) => {
+      return apiClient.post('/contacts/extract-selected', { company_ids });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['companies-pending'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       setShowFinder(false);
-      toast.success(data.message || `Processed companies successfully!`);
+      toast.success(
+        `Done! Queued: ${data.queued} | Skipped (No Domain): ${data.skipped_no_domain} | Skipped (Already Done): ${data.skipped_already_extracted}`
+      );
     },
     onError: (err) => {
-      toast.error(err.message || 'Bulk contact discovery failed');
+      toast.error(err.message || 'Extraction failed. Please try again.');
     },
   });
 
+  const handleStartExtraction = () => {
+    const limit = processLimit === 'all' ? pendingCompanies.length : parseInt(processLimit, 10);
+    const toProcess = pendingCompanies.slice(0, limit);
+    const ids = toProcess.map(c => c.ID || c.id).filter(Boolean);
+    if (!ids.length) {
+      toast.error('No pending companies to process.');
+      return;
+    }
+    if (ids.length > 20) {
+      toast.error('Max 20 companies per request. Choose a smaller batch.');
+      return;
+    }
+    extractMutation.mutate(ids);
+  };
+
   const filtered = contacts.filter((c) => {
-    const name = c.full_name || c['Full Name'] || '';
+    const name    = c.full_name || c['Full Name']    || '';
     const company = c.company_name || c['Company Name'] || '';
-    const email = c.email || c['Email'] || '';
+    const email   = c.email || c['Email']            || '';
     return (
       !search ||
       name.toLowerCase().includes(search.toLowerCase()) ||
@@ -55,6 +76,9 @@ export default function Contacts() {
       email.toLowerCase().includes(search.toLowerCase())
     );
   });
+
+  // Derived limit options — cap "all" at 20 to respect backend limit
+  const effectiveAllCount = Math.min(pendingCompanies.length, 20);
 
   return (
     <div className="space-y-6">
@@ -70,40 +94,71 @@ export default function Contacts() {
               <UserPlus className="w-4 h-4" /> Bulk Find Contacts
             </Button>
           </DialogTrigger>
-          <DialogContent>
+
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Auto-Extract Decision Makers</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 pt-4">
+
+            <div className="space-y-5 pt-2">
               <p className="text-sm text-muted-foreground">
-                Automatically extract HR, Marketing, and Admin contacts for newly discovered companies via Hunter.io.
+                Automatically extract HR, Marketing, and Admin contacts for newly discovered companies via Hunter.io, with Apollo.io as fallback.
               </p>
-              
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Processing Limit (Save API Credits)</label>
-                <Select value={bulkLimit} onValueChange={setBulkLimit}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select limit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">Process 5 companies</SelectItem>
-                    <SelectItem value="10">Process 10 companies</SelectItem>
-                    <SelectItem value="25">Process 25 companies</SelectItem>
-                  </SelectContent>
-                </Select>
+
+              {/* Pending companies summary */}
+              <div className="rounded-lg bg-muted/50 border border-border p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {isPendingLoading
+                    ? <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                    : <Zap className="w-5 h-5 text-primary" />
+                  }
+                </div>
+                <div>
+                  {isPendingLoading ? (
+                    <p className="text-sm text-muted-foreground">Checking pending companies…</p>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-sm">
+                        {pendingCompanies.length} companies pending extraction
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {pendingCompanies.length === 0
+                          ? 'All companies have been processed.'
+                          : 'These have not had contacts extracted yet.'}
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
+
+              {pendingCompanies.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Batch Size (Save API Credits)</label>
+                  <Select value={processLimit} onValueChange={setProcessLimit}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select batch size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pendingCompanies.length >= 5  && <SelectItem value="5">Process 5 companies</SelectItem>}
+                      {pendingCompanies.length >= 10 && <SelectItem value="10">Process 10 companies</SelectItem>}
+                      {pendingCompanies.length >= 20 && <SelectItem value="20">Process 20 companies</SelectItem>}
+                      <SelectItem value="all">
+                        Process All Pending ({effectiveAllCount})
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <Button
                 className="w-full gap-2"
-                disabled={bulkFindContactsMutation.isPending}
-                onClick={() => bulkFindContactsMutation.mutate(bulkLimit)}
+                disabled={extractMutation.isPending || isPendingLoading || pendingCompanies.length === 0}
+                onClick={handleStartExtraction}
               >
-                {bulkFindContactsMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4" />
-                )}
-                {bulkFindContactsMutation.isPending ? 'Extracting Contacts...' : 'Start Extraction'}
+                {extractMutation.isPending
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting Contacts…</>
+                  : <><Zap className="w-4 h-4" /> Start Extraction</>
+                }
               </Button>
             </div>
           </DialogContent>
@@ -149,28 +204,28 @@ export default function Contacts() {
               </TableRow>
             ) : (
               filtered.map((contact, idx) => {
-                const id = contact.id || contact['ID'] || idx;
-                const fullName = contact.full_name || contact['Full Name'] || '';
-                const role = contact.role || contact['Role'] || '';
-                const company = contact.company_name || contact['Company Name'] || '';
-                const email = contact.email || contact['Email'] || '';
+                const id         = contact.id         || contact['ID']             || idx;
+                const fullName   = contact.full_name  || contact['Full Name']      || '';
+                const role       = contact.role       || contact['Role']           || '';
+                const company    = contact.company_name || contact['Company Name'] || '';
+                const email      = contact.email      || contact['Email']          || '';
                 const confidence = contact.confidence_score || contact['Confidence Score'];
-                const status = contact.status || contact['Status'] || '';
+                const status     = contact.status     || contact['Status']         || '';
 
                 return (
                   <TableRow key={id} className="hover:bg-muted/30">
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-bold text-accent">
-                            {fullName?.[0] || '?'}
+                            {fullName?.[0]?.toUpperCase() || '?'}
                           </span>
                         </div>
-                        <span className="font-medium text-sm">{fullName}</span>
+                        <span className="font-medium text-sm">{fullName || '—'}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
-                    <TableCell className="text-sm">{company}</TableCell>
+                    <TableCell className="text-sm">{company || '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{email || '—'}</TableCell>
                     <TableCell>
                       {confidence ? (

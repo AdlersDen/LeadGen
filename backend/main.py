@@ -124,6 +124,16 @@ async def list_companies():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/companies/pending")
+async def list_pending_companies():
+    """Returns companies that have NOT yet had contacts extracted."""
+    try:
+        return db.get_pending_companies()
+    except Exception as e:
+        logger.error(f"/api/companies/pending failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/contacts")
 async def list_contacts():
     """Returns all contact records from the Google Sheet."""
