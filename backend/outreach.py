@@ -101,8 +101,8 @@ def send_email(
     Returns: {"success": bool, "message_id": str | None, "error": str | None}
     """
     # --- TESTING MODE BYPASS ---
-    logger.info(f"[TEST MODE] Simulating email send to {to_email}")
-    return {"success": True, "message_id": "mock_id_for_testing", "error": None}
+    # logger.info(f"[TEST MODE] Simulating email send to {to_email}")
+    # return {"success": True, "message_id": "mock_id_for_testing", "error": None}
     # ---------------------------
 
     if not SENDGRID_API_KEY:
