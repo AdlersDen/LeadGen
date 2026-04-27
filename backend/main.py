@@ -46,7 +46,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-origins = ["*"]
+origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://adlers-den-leadgen.vercel.app"
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,6 +94,7 @@ class SendEmailRequest(BaseModel):
 # Health Check
 # ─────────────────────────────────────────────────────────────────────────────
 
+@app.get("/health")
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "message": "Adler's Den backend is running!"}
