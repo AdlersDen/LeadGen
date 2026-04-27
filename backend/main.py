@@ -46,15 +46,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://adlers-den-leadgen.vercel.app"
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["https://adlers-den-leadgen.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
