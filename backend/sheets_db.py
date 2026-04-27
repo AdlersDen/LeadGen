@@ -122,14 +122,40 @@ class SheetsDB:
         return company_data
 
     def add_companies_bulk(self, companies_data: list[dict]):
-        """Appends multiple companies in a single API call."""
+        """Appends multiple companies in a single API call, skipping duplicates."""
         ws = self._get_worksheet("Companies")
         if not ws or not companies_data:
             return []
 
+        # --- Deduplication: fetch existing names + domains in one call ---
+        # col_values is zero-cost compared to get_all_records() since we only
+        # pull two columns instead of every cell in the sheet.
+        existing_names = {v.strip().lower() for v in ws.col_values(2) if v.strip()}   # col B = Name
+        existing_domains = {v.strip().lower() for v in ws.col_values(5) if v.strip()} # col E = Domain
+
+        new_companies = []
+        for company in companies_data:
+            name   = (company.get("name")   or "").strip().lower()
+            domain = (company.get("domain") or "").strip().lower()
+
+            # Skip if the name already exists, or if it has a domain that already exists
+            if name in existing_names:
+                logger.info(f"Skipping duplicate company (name): {company.get('name')}")
+                continue
+            if domain and domain in existing_domains:
+                logger.info(f"Skipping duplicate company (domain): {domain}")
+                continue
+
+            new_companies.append(company)
+
+        if not new_companies:
+            logger.info("Deduplication: 0 new companies to add.")
+            return []
+
+        # --- Build and append only the new rows ---
         date_added = datetime.now(timezone.utc).isoformat()
         rows = []
-        for company_data in companies_data:
+        for company_data in new_companies:
             record_id = str(uuid.uuid4())
             row = [
                 record_id,
@@ -148,7 +174,9 @@ class SheetsDB:
             company_data["created_date"] = date_added
 
         ws.append_rows(rows)
-        return companies_data
+        logger.info(f"Added {len(new_companies)} new companies to Sheets.")
+        return new_companies
+
 
     # --- Contacts Tab ---
     def get_contacts(self):
