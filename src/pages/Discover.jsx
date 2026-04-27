@@ -177,6 +177,29 @@ export default function Discover() {
             </div>
           </motion.div>
         )}
+
+        {step === 'done' && discoveredCompanies.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-card rounded-xl border border-border p-12 text-center"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
+              <Search className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-semibold">0 Companies Discovered</h3>
+            <p className="text-muted-foreground mt-2 max-w-md mx-auto">
+              We couldn't find any corporate prospects in this area. Try a different pincode.
+            </p>
+            <Button
+              variant="outline"
+              className="mt-6"
+              onClick={() => { setStep('input'); setPincode(''); }}
+            >
+              New Search
+            </Button>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
