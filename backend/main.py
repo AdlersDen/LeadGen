@@ -46,9 +46,22 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Define allowed origins for both local development and production
+origins = [
+    "http://localhost:5173",     # Vite default
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",     # React/Next.js default
+    "http://127.0.0.1:3000",
+    "https://adlers-den-leadgen.vercel.app" # Production frontend
+]
+
+# Add Vercel preview environments support if FRONTEND_URL is set in environment
+if os.environ.get("FRONTEND_URL"):
+    origins.append(os.environ.get("FRONTEND_URL"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://adlers-den-leadgen.vercel.app"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
