@@ -218,11 +218,11 @@ async def discover(req: DiscoverRequest):
     
     saved_companies = db.add_companies_bulk(companies) if companies else []
 
-    # Log the run
+    # Log the run (record total discovered, not just newly saved)
     db.add_run({
         "pincode": pincode,
         "location_name": location_name,
-        "companies_found": len(saved_companies),
+        "companies_found": len(companies),
         "contacts_found": 0,
         "emails_sent": 0,
         "status": "completed",
@@ -231,8 +231,8 @@ async def discover(req: DiscoverRequest):
     return {
         "pincode": pincode,
         "location_name": location_name,
-        "companies_found": len(saved_companies),
-        "companies": saved_companies,
+        "companies_found": len(companies),
+        "companies": companies,
     }
 
 
