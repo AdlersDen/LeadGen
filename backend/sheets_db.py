@@ -78,7 +78,7 @@ class SheetsDB:
         if not first_row:
             headers = []
             if title == "Companies":
-                headers = ["ID", "Name", "Industry", "Address", "Domain", "Pincode", "Employee Count", "Tier", "Status", "Created Date"]
+                headers = ["ID", "Name", "Industry", "Address", "Domain", "Pincode", "Employee Count", "Tier", "Contacts Extracted", "Status", "Created Date"]
             elif title == "Contacts":
                 headers = ["ID", "Company ID", "Full Name", "Role", "Email", "Confidence Score", "Status", "Company Name", "Created Date"]
             elif title == "Outreach Logs":
@@ -176,6 +176,61 @@ class SheetsDB:
         ws.append_rows(rows)
         logger.info(f"Added {len(new_companies)} new companies to Sheets.")
         return new_companies
+
+    def mark_contacts_extracted_bulk(self, company_ids: list[str]):
+        """Marks multiple companies as having had their contacts extracted in a single batch update."""
+        ws = self._get_worksheet("Companies")
+        if not ws or not company_ids:
+            return
+
+        all_values = ws.get_all_values()
+        if not all_values:
+            return
+
+        headers = all_values[0]
+        
+        # Ensure 'Contacts Extracted' column exists
+        if "Contacts Extracted" not in headers:
+            col_idx = len(headers) + 1
+            ws.update_cell(1, col_idx, "Contacts Extracted")
+            headers.append("Contacts Extracted")
+            # Update all_values so we know the new length
+            for row in all_values:
+                while len(row) < col_idx:
+                    row.append("")
+        else:
+            col_idx = headers.index("Contacts Extracted") + 1
+
+        id_col_idx = headers.index("ID") if "ID" in headers else 0
+        
+        # Find row indices for the given company IDs
+        company_ids_set = set(company_ids)
+        rows_to_update = []
+        for row_idx, row in enumerate(all_values):
+            if row_idx == 0: continue # Skip header
+            if row[id_col_idx] in company_ids_set:
+                rows_to_update.append(row_idx + 1) # +1 for 1-based index in gspread
+        
+        if not rows_to_update:
+            return
+
+        # Simple column letter conversion (works for A-Z)
+        import string
+        col_letter = string.ascii_uppercase[col_idx - 1]
+
+        # Prepare batch update data
+        batch_data = []
+        for row_num in rows_to_update:
+            batch_data.append({
+                'range': f"{col_letter}{row_num}",
+                'values': [["Yes"]]
+            })
+
+        try:
+            ws.batch_update(batch_data)
+            logger.info(f"Marked {len(rows_to_update)} companies as contacts extracted.")
+        except Exception as e:
+            logger.error(f"Failed to batch update Contacts Extracted: {e}")
 
 
     # --- Contacts Tab ---

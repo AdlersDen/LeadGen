@@ -83,6 +83,9 @@ class FindContactsRequest(BaseModel):
 class BulkFindContactsRequest(BaseModel):
     limit: int = 5
 
+class ExtractSelectedRequest(BaseModel):
+    company_ids: list[str]
+
 class GeneratePitchRequest(BaseModel):
     contact_name: str
     role: str
@@ -325,6 +328,71 @@ async def bulk_find_contacts(req: BulkFindContactsRequest):
         "processed": processed_count,
         "contacts_found": total_contacts_found,
         "message": f"Processed {processed_count} companies and found {total_contacts_found} contacts."
+    }
+
+
+@app.post("/api/contacts/extract-selected")
+async def extract_selected_contacts(req: ExtractSelectedRequest):
+    """
+    Extracts contacts for specific user-selected companies.
+    Max 20 companies per request to protect API limits.
+    """
+    if len(req.company_ids) > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 20 companies can be processed per request."
+        )
+
+    companies = db.get_companies()
+    
+    # Filter only to requested IDs
+    target_ids = set(req.company_ids)
+    target_companies = [c for c in companies if c.get("ID") in target_ids]
+
+    queued = 0
+    skipped_no_domain = 0
+    skipped_already_extracted = 0
+    successful_company_ids = []
+
+    for company in target_companies:
+        domain = company.get("Domain")
+        company_name = company.get("Name") or company.get("Company Name")
+        company_id = company.get("ID")
+        extracted_status = company.get("Contacts Extracted", "")
+
+        if extracted_status.lower() == "yes":
+            skipped_already_extracted += 1
+            continue
+
+        if not domain:
+            skipped_no_domain += 1
+            continue
+
+        try:
+            # find_contacts tries Hunter.io first, then falls back to Apollo.io
+            raw_contacts = find_contacts(company_name, domain)
+            queued += 1
+            
+            for contact_data in raw_contacts:
+                contact_data["company_name"] = company_name
+                contact_data["status"] = "discovered"
+                db.add_contact(contact_data, company_id)
+            
+            # If we attempted extraction (even if 0 found), we consider it processed
+            # so we don't keep wasting credits on it.
+            successful_company_ids.append(company_id)
+                
+        except Exception as e:
+            logger.error(f"Selective contact extraction error for {company_name}: {e}")
+            continue
+
+    if successful_company_ids:
+        db.mark_contacts_extracted_bulk(successful_company_ids)
+
+    return {
+        "queued": queued,
+        "skipped_no_domain": skipped_no_domain,
+        "skipped_already_extracted": skipped_already_extracted
     }
 
 

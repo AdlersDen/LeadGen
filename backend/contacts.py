@@ -54,6 +54,7 @@ def _search_hunter(domain: str) -> list[dict]:
         "domain": domain,
         "api_key": HUNTER_API_KEY,
         "limit": 10,
+        "type": "personal",
     }
     try:
         resp = requests.get(url, params=params, timeout=15)
