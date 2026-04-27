@@ -1,48 +1,48 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Users, Search, UserPlus, Loader2, Zap } from 'lucide-react';
+import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { toast } from 'sonner';
 
 export default function Contacts() {
   const [search, setSearch] = useState('');
-  const [showFinder, setShowFinder] = useState(false);
-  const [processLimit, setProcessLimit] = useState('5');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [panelOpen, setPanelOpen] = useState(false);
   const queryClient = useQueryClient();
 
+  // ── Contacts list ──────────────────────────────────────────────────────────
   const { data: contacts = [], isLoading } = useQuery({
     queryKey: ['contacts'],
     queryFn: () => apiClient.get('/contacts'),
   });
 
-  // Fetch pending companies only when the modal is open
+  // ── Pending companies — always fetched so the count badge is always visible ─
   const { data: pendingCompanies = [], isLoading: isPendingLoading } = useQuery({
     queryKey: ['companies-pending'],
     queryFn: () => apiClient.get('/companies/pending'),
-    enabled: showFinder,      // Only fires when the modal is open
-    staleTime: 0,             // Always re-fetch fresh data when modal opens
+    staleTime: 0,
   });
 
+  // ── Extraction mutation ────────────────────────────────────────────────────
   const extractMutation = useMutation({
-    mutationFn: async (company_ids) => {
-      return apiClient.post('/contacts/extract-selected', { company_ids });
-    },
+    mutationFn: (company_ids) =>
+      apiClient.post('/contacts/extract-selected', { company_ids }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['companies-pending'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
-      setShowFinder(false);
+      setSelectedIds(new Set());
       toast.success(
-        `Done! Queued: ${data.queued} | Skipped (No Domain): ${data.skipped_no_domain} | Skipped (Already Done): ${data.skipped_already_extracted}`
+        `Done! Queued: ${data.queued} · Skipped (no domain): ${data.skipped_no_domain} · Already done: ${data.skipped_already_extracted}`
       );
     },
     onError: (err) => {
@@ -50,25 +50,32 @@ export default function Contacts() {
     },
   });
 
-  const handleStartExtraction = () => {
-    const limit = processLimit === 'all' ? pendingCompanies.length : parseInt(processLimit, 10);
-    const toProcess = pendingCompanies.slice(0, limit);
-    const ids = toProcess.map(c => c.ID || c.id).filter(Boolean);
-    if (!ids.length) {
-      toast.error('No pending companies to process.');
-      return;
-    }
-    if (ids.length > 20) {
-      toast.error('Max 20 companies per request. Choose a smaller batch.');
-      return;
-    }
+  // ── Selection helpers ──────────────────────────────────────────────────────
+  const pendingIds = pendingCompanies.map(c => c.ID || c.id).filter(Boolean);
+  const allSelected = pendingIds.length > 0 && pendingIds.every(id => selectedIds.has(id));
+
+  const toggleSelectAll = (checked) => {
+    setSelectedIds(checked ? new Set(pendingIds) : new Set());
+  };
+
+  const toggleOne = (checked, id) => {
+    const next = new Set(selectedIds);
+    checked ? next.add(id) : next.delete(id);
+    setSelectedIds(next);
+  };
+
+  const handleExtract = () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) { toast.error('Select at least one company first.'); return; }
+    if (ids.length > 20) { toast.error('Max 20 companies per request.'); return; }
     extractMutation.mutate(ids);
   };
 
+  // ── Contacts search filter ─────────────────────────────────────────────────
   const filtered = contacts.filter((c) => {
-    const name    = c.full_name || c['Full Name']    || '';
+    const name    = c.full_name   || c['Full Name']    || '';
     const company = c.company_name || c['Company Name'] || '';
-    const email   = c.email || c['Email']            || '';
+    const email   = c.email       || c['Email']         || '';
     return (
       !search ||
       name.toLowerCase().includes(search.toLowerCase()) ||
@@ -77,94 +84,130 @@ export default function Contacts() {
     );
   });
 
-  // Derived limit options — cap "all" at 20 to respect backend limit
-  const effectiveAllCount = Math.min(pendingCompanies.length, 20);
+  const tierColors = { A: 'text-emerald-600 font-bold', B: 'text-amber-600 font-semibold' };
 
   return (
     <div className="space-y-6">
+
+      {/* ── Page header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
           <p className="text-muted-foreground text-sm mt-1">{contacts.length} contacts in database</p>
         </div>
 
-        <Dialog open={showFinder} onOpenChange={setShowFinder}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <UserPlus className="w-4 h-4" /> Bulk Find Contacts
-            </Button>
-          </DialogTrigger>
-
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Auto-Extract Decision Makers</DialogTitle>
-            </DialogHeader>
-
-            <div className="space-y-5 pt-2">
-              <p className="text-sm text-muted-foreground">
-                Automatically extract HR, Marketing, and Admin contacts for newly discovered companies via Hunter.io, with Apollo.io as fallback.
-              </p>
-
-              {/* Pending companies summary */}
-              <div className="rounded-lg bg-muted/50 border border-border p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  {isPendingLoading
-                    ? <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                    : <Zap className="w-5 h-5 text-primary" />
-                  }
-                </div>
-                <div>
-                  {isPendingLoading ? (
-                    <p className="text-sm text-muted-foreground">Checking pending companies…</p>
-                  ) : (
-                    <>
-                      <p className="font-semibold text-sm">
-                        {pendingCompanies.length} companies pending extraction
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {pendingCompanies.length === 0
-                          ? 'All companies have been processed.'
-                          : 'These have not had contacts extracted yet.'}
-                      </p>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {pendingCompanies.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Batch Size (Save API Credits)</label>
-                  <Select value={processLimit} onValueChange={setProcessLimit}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select batch size" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {pendingCompanies.length >= 5  && <SelectItem value="5">Process 5 companies</SelectItem>}
-                      {pendingCompanies.length >= 10 && <SelectItem value="10">Process 10 companies</SelectItem>}
-                      {pendingCompanies.length >= 20 && <SelectItem value="20">Process 20 companies</SelectItem>}
-                      <SelectItem value="all">
-                        Process All Pending ({effectiveAllCount})
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              <Button
-                className="w-full gap-2"
-                disabled={extractMutation.isPending || isPendingLoading || pendingCompanies.length === 0}
-                onClick={handleStartExtraction}
-              >
-                {extractMutation.isPending
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting Contacts…</>
-                  : <><Zap className="w-4 h-4" /> Start Extraction</>
-                }
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {/* Toggle panel button with pending badge */}
+        <Button
+          variant={panelOpen ? 'default' : 'outline'}
+          className="gap-2"
+          onClick={() => setPanelOpen(v => !v)}
+        >
+          <Zap className="w-4 h-4" />
+          Extract Contacts
+          {!isPendingLoading && pendingCompanies.length > 0 && (
+            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+              {pendingCompanies.length} pending
+            </Badge>
+          )}
+          {panelOpen ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
+        </Button>
       </div>
 
+      {/* ── Extraction panel ─────────────────────────────────────────────── */}
+      {panelOpen && (
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+
+          {/* Panel header */}
+          <div className="flex items-center justify-between px-5 py-3 bg-muted/40 border-b border-border">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="select-all-pending"
+                checked={allSelected}
+                onCheckedChange={toggleSelectAll}
+                disabled={isPendingLoading || pendingCompanies.length === 0}
+                aria-label="Select all pending companies"
+              />
+              <label htmlFor="select-all-pending" className="text-sm font-medium cursor-pointer select-none">
+                {isPendingLoading
+                  ? 'Loading pending companies…'
+                  : pendingCompanies.length === 0
+                  ? 'All companies have been extracted already'
+                  : `Select All — ${pendingCompanies.length} companies pending extraction`}
+              </label>
+            </div>
+
+            {selectedIds.size > 0 && (
+              <Button
+                size="sm"
+                className="gap-2"
+                disabled={extractMutation.isPending}
+                onClick={handleExtract}
+              >
+                {extractMutation.isPending
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Extracting…</>
+                  : <><Zap className="w-3.5 h-3.5" /> Extract for Selected ({selectedIds.size}) — Est. {selectedIds.size} Credit{selectedIds.size > 1 ? 's' : ''}</>
+                }
+              </Button>
+            )}
+          </div>
+
+          {/* Pending companies list */}
+          {isPendingLoading ? (
+            <div className="p-4 space-y-2">
+              {Array(3).fill(0).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : pendingCompanies.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">
+              🎉 All discovered companies have had contacts extracted.
+            </p>
+          ) : (
+            <div className="divide-y divide-border max-h-72 overflow-y-auto">
+              {pendingCompanies.map((company, idx) => {
+                const id     = company.ID     || company.id     || idx;
+                const name   = company.Name   || company.name   || '—';
+                const domain = company.Domain || company.domain || '';
+                const tier   = company.Tier   || company.tier   || '';
+
+                return (
+                  <label
+                    key={id}
+                    htmlFor={`company-${id}`}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 cursor-pointer transition-colors"
+                  >
+                    <Checkbox
+                      id={`company-${id}`}
+                      checked={selectedIds.has(id)}
+                      onCheckedChange={(checked) => toggleOne(checked, id)}
+                      disabled={extractMutation.isPending}
+                    />
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Building2 className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{domain || 'No domain'}</p>
+                    </div>
+                    {tier && (
+                      <span className={`text-xs flex-shrink-0 ${tierColors[tier] || 'text-muted-foreground'}`}>
+                        Tier {tier}
+                      </span>
+                    )}
+                    {!domain && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 h-5 flex-shrink-0 text-muted-foreground">
+                        No domain
+                      </Badge>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Contacts search & table ───────────────────────────────────────── */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
@@ -204,13 +247,13 @@ export default function Contacts() {
               </TableRow>
             ) : (
               filtered.map((contact, idx) => {
-                const id         = contact.id         || contact['ID']             || idx;
-                const fullName   = contact.full_name  || contact['Full Name']      || '';
-                const role       = contact.role       || contact['Role']           || '';
-                const company    = contact.company_name || contact['Company Name'] || '';
-                const email      = contact.email      || contact['Email']          || '';
+                const id         = contact.id           || contact['ID']             || idx;
+                const fullName   = contact.full_name    || contact['Full Name']      || '';
+                const role       = contact.role         || contact['Role']           || '';
+                const company    = contact.company_name || contact['Company Name']   || '';
+                const email      = contact.email        || contact['Email']          || '';
                 const confidence = contact.confidence_score || contact['Confidence Score'];
-                const status     = contact.status     || contact['Status']         || '';
+                const status     = contact.status       || contact['Status']         || '';
 
                 return (
                   <TableRow key={id} className="hover:bg-muted/30">
@@ -231,11 +274,9 @@ export default function Contacts() {
                       {confidence ? (
                         <span
                           className={`text-xs font-semibold ${
-                            confidence >= 70
-                              ? 'text-emerald-600'
-                              : confidence >= 50
-                              ? 'text-amber-600'
-                              : 'text-red-600'
+                            confidence >= 70 ? 'text-emerald-600'
+                            : confidence >= 50 ? 'text-amber-600'
+                            : 'text-red-600'
                           }`}
                         >
                           {confidence}%
