@@ -78,7 +78,7 @@ class SheetsDB:
         if not first_row:
             headers = []
             if title == "Companies":
-                headers = ["ID", "Name", "Industry", "Address", "Domain", "Pincode", "Employee Count", "Status", "Created Date"]
+                headers = ["ID", "Name", "Industry", "Address", "Domain", "Pincode", "Employee Count", "Tier", "Status", "Created Date"]
             elif title == "Contacts":
                 headers = ["ID", "Company ID", "Full Name", "Role", "Email", "Confidence Score", "Status", "Company Name", "Created Date"]
             elif title == "Outreach Logs":
@@ -111,6 +111,7 @@ class SheetsDB:
             company_data.get("domain", ""),
             company_data.get("pincode", ""),
             company_data.get("employee_count", ""),
+            company_data.get("tier", ""),
             company_data.get("status", "discovered"),
             date_added
         ]
@@ -138,6 +139,7 @@ class SheetsDB:
                 company_data.get("domain", ""),
                 company_data.get("pincode", ""),
                 company_data.get("employee_count", ""),
+                company_data.get("tier", ""),
                 company_data.get("status", "discovered"),
                 date_added
             ]

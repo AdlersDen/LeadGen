@@ -138,11 +138,31 @@ def _extract_domain(place: dict) -> str:
         return "", ""
 
 
+def _score_tier(rating: float | None, domain: str) -> str:
+    """
+    Assigns a lead tier based on Google rating and domain availability.
+    Tier A: high-value leads (rating >= 4.0 AND has a domain)
+    Tier B: medium-value leads (rating >= 3.5 OR has a domain)
+    Tier C: low-priority leads (everything else)
+    """
+    has_domain = bool(domain and domain.strip())
+    rating = rating or 0.0
+
+    if rating >= 4.0 and has_domain:
+        return "A"
+    if rating >= 3.5 or has_domain:
+        return "B"
+    return "C"
+
+
 def discover_companies(pincode: str) -> dict:
     """
     Main entry point for Module 1.
     Returns a dict with location_name and a list of filtered companies.
+    Fetches up to 3 pages (60 raw results) before applying the B2B filter.
     """
+    import time
+
     if not MAPS_API_KEY:
         logger.error("GOOGLE_MAPS_API_KEY is not set.")
         return {"location_name": pincode, "companies": []}
@@ -153,33 +173,42 @@ def discover_companies(pincode: str) -> dict:
 
     logger.info(f"Discovering companies near {location_name} ({lat}, {lng})")
 
+    # --- Paginated fetch: up to 3 pages = up to 60 raw results ---
     all_places = []
     data = _fetch_places(lat, lng)
     all_places.extend(data.get("results", []))
 
-    # Fetch up to 2 pages of results (each page = 20 places)
-    next_token = data.get("next_page_token")
-    if next_token:
-        import time
-        time.sleep(2)  # Google requires a short delay before using next_page_token
-        data2 = _fetch_places(lat, lng, page_token=next_token)
-        all_places.extend(data2.get("results", []))
+    for _ in range(2):  # fetch up to 2 more pages (3 total)
+        next_token = data.get("next_page_token")
+        if not next_token:
+            break
+        # Google requires a 2s delay before next_page_token becomes valid
+        time.sleep(2)
+        data = _fetch_places(lat, lng, page_token=next_token)
+        all_places.extend(data.get("results", []))
 
-    # Filter
+    # --- B2B filter ---
     b2b_places = [p for p in all_places if _is_b2b_company(p)]
-    logger.info(f"Found {len(all_places)} total places, {len(b2b_places)} passed B2B filter for {pincode}")
+    logger.info(
+        f"Fetched {len(all_places)} total places, "
+        f"{len(b2b_places)} passed B2B filter for {pincode}"
+    )
 
+    # --- Enrich each place with domain, phone, and tier ---
     companies = []
     for place in b2b_places:
         domain, phone = _extract_domain(place)
+        rating = place.get("rating")
+        tier = _score_tier(rating, domain)
         companies.append({
             "name": place.get("name", ""),
             "address": place.get("vicinity", ""),
             "pincode": pincode,
             "industry": ", ".join(place.get("types", []))[:100],
-            "google_rating": place.get("rating"),
+            "google_rating": rating,
             "domain": domain,
             "phone": phone,
+            "tier": tier,
             "status": "discovered",
             "source": "Google Maps",
         })
