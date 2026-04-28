@@ -12,9 +12,8 @@ export default function PipelineChart({ companies }) {
   };
 
   companies.forEach(c => {
-    if (statusCounts[c.status] !== undefined) {
-      statusCounts[c.status]++;
-    }
+    const raw = (c.Status || c.status || '').toLowerCase().replace(/ /g, '_');
+    if (statusCounts[raw] !== undefined) { statusCounts[raw]++; }
   });
 
   const data = [

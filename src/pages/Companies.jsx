@@ -53,7 +53,8 @@ export default function Companies() {
       name.toLowerCase().includes(search.toLowerCase()) ||
       industry.toLowerCase().includes(search.toLowerCase()) ||
       pincode.includes(search);
-    const matchStatus = statusFilter === 'all' || status.toLowerCase() === statusFilter;
+    const normalizedStatus = status.toLowerCase().replace(/ /g, '_');
+    const matchStatus = statusFilter === 'all' || normalizedStatus === statusFilter;
     return matchSearch && matchStatus;
   });
 

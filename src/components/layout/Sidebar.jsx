@@ -28,7 +28,7 @@ export default function Sidebar({ collapsed, onToggle }) {
           <Zap className="w-4 h-4 text-primary-foreground" />
         </div>
         {!collapsed && (
-          <span className="font-inter font-bold text-base tracking-tight whitespace-nowrap">LeadPulse</span>
+          <span className="font-inter font-bold text-base tracking-tight whitespace-nowrap">Adler's Den</span>
         )}
       </div>
 

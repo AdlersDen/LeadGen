@@ -12,14 +12,16 @@ export default function StatCard({ title, value, icon: Icon, trend, trendLabel, 
         <div>
           <p className="text-sm text-muted-foreground font-medium">{title}</p>
           <p className="text-3xl font-bold mt-1 tracking-tight">{value}</p>
-          {trend !== undefined && (
+          {(trend !== undefined || trendLabel) && (
             <div className="flex items-center gap-1 mt-2">
-              <span className={cn(
-                "text-xs font-semibold px-1.5 py-0.5 rounded-md",
-                trend >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-              )}>
-                {trend >= 0 ? '+' : ''}{trend}%
-              </span>
+              {trend !== undefined && (
+                <span className={cn(
+                  "text-xs font-semibold px-1.5 py-0.5 rounded-md",
+                  trend >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                )}>
+                  {trend >= 0 ? '+' : ''}{trend}%
+                </span>
+              )}
               {trendLabel && <span className="text-xs text-muted-foreground">{trendLabel}</span>}
             </div>
           )}

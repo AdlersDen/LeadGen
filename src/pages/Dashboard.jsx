@@ -38,7 +38,7 @@ export default function Dashboard() {
     queryFn: () => apiClient.get('/contacts'),
   });
 
-  // ── Delivery analytics derived from outreach logs ───────────────────────────
+  // -- Delivery analytics derived from outreach logs ---------------------------
   const { data: outreachLogs = [] } = useQuery({
     queryKey: ['outreach'],
     queryFn: () => apiClient.get('/outreach'),
@@ -54,7 +54,7 @@ export default function Dashboard() {
   const openRate       = delivered > 0  ? Math.round((opened    / delivered) * 100) : 0;
   const bounceRate     = totalSent > 0 ? Math.round((bounced   / totalSent) * 100) : 0;
 
-  // ── Activity feed ────────────────────────────────────────────────────────────
+  // -- Activity feed ------------------------------------------------------------
   const recentRuns = (stats.recent_runs || []).map((r) => {
     const pincode = String(readField(r, 'Pincode', 'pincode') || '').trim();
     const complexName = String(readField(r, 'Complex Name', 'complex_name') || '').trim();
@@ -85,9 +85,11 @@ export default function Dashboard() {
   const totalContacts = contacts.length || stats.contacts || 0;
   const replyRate = stats.reply_rate ?? 0;
 
+  const isEmpty = totalCompanies === 0 && totalContacts === 0 && totalSent === 0;
+
   return (
     <div className="space-y-8">
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* -- Header -------------------------------------------------------- */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -102,7 +104,26 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* ── Primary stats row ────────────────────────────────────────────── */}
+      {/* -- Empty state CTA ----------------------------------------------- */}
+      {isEmpty && (
+        <div className="bg-card rounded-xl border border-dashed border-border p-10 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+            <MapPin className="w-7 h-7 text-primary" />
+          </div>
+          <h3 className="text-lg font-semibold">Run your first discovery</h3>
+          <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
+            Enter a pincode or business complex to discover B2B companies and kick off your outreach pipeline.
+          </p>
+          <Link to="/discover">
+            <Button className="mt-5 gap-2" id="dashboard-start-btn">
+              <MapPin className="w-4 h-4" /> Start Discovering
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {/* -- Primary stats row ---------------------------------------------- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Companies"    value={totalCompanies} icon={Building2} />
         <StatCard title="Contacts"     value={totalContacts} icon={Users} />
@@ -110,7 +131,7 @@ export default function Dashboard() {
         <StatCard title="Reply Rate"   value={`${replyRate}%`} icon={TrendingUp} />
       </div>
 
-      {/* ── Email delivery analytics row (from SendGrid webhook data) ───── */}
+      {/* -- Email delivery analytics row (from SendGrid webhook data) ----- */}
       <div>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Email Delivery Analytics
@@ -120,22 +141,19 @@ export default function Dashboard() {
             title="Delivery Rate"
             value={`${deliveryRate}%`}
             icon={CheckCircle2}
-            trend={deliveryRate > 0 ? deliveryRate - 100 : undefined}
-            trendLabel={`${delivered} delivered`}
+            trendLabel={totalSent > 0 ? `${delivered} of ${totalSent} delivered` : undefined}
           />
           <StatCard
             title="Open Rate"
             value={`${openRate}%`}
             icon={MousePointerClick}
-            trend={openRate > 0 ? openRate : undefined}
-            trendLabel={`${opened} opened`}
+            trendLabel={delivered > 0 ? `${opened} of ${delivered} opened` : undefined}
           />
           <StatCard
             title="Bounce Rate"
             value={`${bounceRate}%`}
             icon={AlertTriangle}
-            trend={bounceRate > 0 ? -bounceRate : undefined}
-            trendLabel={`${bounced} bounced`}
+            trendLabel={totalSent > 0 ? `${bounced} bounced` : undefined}
             className={bounceRate > 5 ? 'border-destructive/40' : ''}
           />
         </div>
@@ -146,7 +164,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Pipeline chart + activity feed ──────────────────────────────── */}
+      {/* -- Pipeline chart + activity feed -------------------------------- */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3">
           <PipelineChart companies={companies} />

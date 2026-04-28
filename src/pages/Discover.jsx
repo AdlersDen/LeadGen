@@ -4,7 +4,8 @@ import apiClient from '@/api/apiClient';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Search, Building2, Loader2, CheckCircle2, AlertCircle, Building } from 'lucide-react';
+import { MapPin, Search, Building2, Users, Loader2, CheckCircle2, AlertCircle, Building } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -71,6 +72,8 @@ export default function Discover() {
   const [step, setStep]                               = useState('input'); // input | discovering | done
   const [errorMsg, setErrorMsg]                       = useState('');
 
+  const [slowWarning, setSlowWarning] = useState(false);
+  const slowTimerRef = useRef(null);
   const queryClient  = useQueryClient();
   const suggestRef   = useRef(null);
 
@@ -130,9 +133,14 @@ export default function Discover() {
     mutationFn: async (payload) => {
       setStep('discovering');
       setErrorMsg('');
+      setSlowWarning(false);
+      // Show slow warning after 25s (Render cold-starts can take ~30s)
+      slowTimerRef.current = setTimeout(() => setSlowWarning(true), 25000);
       return apiClient.post('/discover', payload);
     },
     onSuccess: (data) => {
+      clearTimeout(slowTimerRef.current);
+      setSlowWarning(false);
       setDiscoveredCompanies(data.companies || []);
       setStep('done');
       queryClient.invalidateQueries({ queryKey: ['companies'] });
@@ -141,6 +149,8 @@ export default function Discover() {
       toast.success(`Found ${data.companies_found || 0} companies${data.location_name ? ` in ${data.location_name}` : ''}!`);
     },
     onError: (err) => {
+      clearTimeout(slowTimerRef.current);
+      setSlowWarning(false);
       setStep('input');
       setErrorMsg(err.message || 'Discovery failed. Please try again.');
       toast.error(err.message || 'Discovery failed. Please try again.');
@@ -172,6 +182,8 @@ export default function Discover() {
   };
 
   const resetSearch = () => {
+    clearTimeout(slowTimerRef.current);
+    setSlowWarning(false);
     setStep('input');
     setPincode('');
     setComplexName('');
@@ -185,9 +197,13 @@ export default function Discover() {
     <div className="space-y-8">
       {/* ── Page title (unchanged) ─────────────────────────────────────── */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Pincode Discovery</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {searchMode === 'pincode' ? 'Pincode Discovery' : 'Business Complex Discovery'}
+        </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Enter a pincode to discover B2B companies in the area
+          {searchMode === 'pincode'
+            ? 'Enter a 6-digit pincode to discover B2B companies in the area'
+            : 'Search by business complex or area name to find corporate tenants'}
         </p>
       </div>
 
@@ -429,12 +445,17 @@ export default function Discover() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
               <h3 className="font-semibold">{discoveredCompanies.length} Companies Discovered</h3>
               <Button variant="outline" size="sm" onClick={resetSearch}>
                 New Search
               </Button>
+              <Link to="/contacts">
+                <Button size="sm" className="gap-1.5">
+                  <Users className="w-3.5 h-3.5" /> Extract Contacts ?
+                </Button>
+              </Link>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

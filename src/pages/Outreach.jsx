@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
 // ─── Searchable Contact Combobox ──────────────────────────────────────────────
 function ContactCombobox({ contacts, value, onChange }) {
@@ -251,7 +251,7 @@ export default function Outreach() {
             <DialogHeader>
               <DialogTitle>AI-Powered Outreach</DialogTitle>
               <DialogDescription>
-                Generate and review a personalized email before sending it through SendGrid.
+                Pick a contact, generate a personalized pitch via Gemini AI, edit if needed, and send � all in one place.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-2">
@@ -314,7 +314,7 @@ export default function Outreach() {
                     </Button>
                     <Button
                       className="flex-1 gap-2"
-                      disabled={sendEmailMutation.isPending}
+                      disabled={sendEmailMutation.isPending || !generatedPitch.body.trim()}
                       onClick={() => sendEmailMutation.mutate()}
                       id="send-email-btn"
                     >
