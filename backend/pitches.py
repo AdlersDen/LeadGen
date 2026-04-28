@@ -53,6 +53,8 @@ Strict rules:
 4. End with a soft CTA—suggest a quick 15-minute call or meeting, NO pressure.
 5. Warm, professional tone. No buzzwords. No generic fluff.
 6. Include a compelling subject line.
+7. Sign off EXACTLY as: "Best regards,
+Adler's Den" -- do NOT use "[Your Name]" or any placeholder.
 
 Return ONLY a valid JSON object with exactly two keys: "subject" and "body". No markdown, no explanations."""
 
