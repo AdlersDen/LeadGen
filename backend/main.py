@@ -188,28 +188,56 @@ async def list_outreach():
 
 @app.get("/api/runs")
 async def get_runs():
-    runs = db.get_runs()
-    companies = db.get_companies()
-    contacts = db.get_contacts()
-    outreach = db.get_outreach_logs()
+    try:
+        runs      = db.get_runs()
+        companies = db.get_companies()
+        contacts  = db.get_contacts()
+        outreach  = db.get_outreach_logs()
 
-    # Dynamically calculate the totals so they are always up to date
-    for run in runs:
-        pincode = str(run.get("Pincode") or run.get("pincode", ""))
-        
-        run_companies = [c for c in companies if str(c.get("Pincode") or c.get("pincode", "")) == pincode]
-        company_ids = [c.get("ID") for c in run_companies if c.get("ID")]
-        
-        run_contacts = [c for c in contacts if c.get("Company ID") in company_ids]
-        contact_ids = [c.get("ID") for c in run_contacts if c.get("ID")]
-        
-        run_emails = [o for o in outreach if o.get("Contact ID") in contact_ids]
+        for run in runs:
+            try:
+                pincode  = str(run.get("Pincode") or run.get("pincode") or "").strip()
+                location = str(run.get("Location Name") or run.get("location_name") or "").strip()
 
-        run["Companies Found"] = len(run_companies)
-        run["Contacts Found"] = len(run_contacts)
-        run["Emails Sent"] = len(run_emails)
+                if pincode:
+                    # Pincode mode — match companies by pincode field
+                    run_companies = [
+                        c for c in companies
+                        if str(c.get("Pincode") or c.get("pincode") or "").strip() == pincode
+                    ]
+                elif location:
+                    # Complex-mode run (no pincode) — fuzzy match by location name
+                    loc_lower = location.lower()
+                    run_companies = [
+                        c for c in companies
+                        if loc_lower in str(c.get("Address") or "").lower()
+                    ]
+                else:
+                    run_companies = []
 
-    return sorted(runs, key=lambda x: x.get("Timestamp", x.get("created_date", "")), reverse=True)
+                company_ids  = [c.get("ID") for c in run_companies if c.get("ID")]
+                run_contacts = [c for c in contacts if c.get("Company ID") in company_ids]
+                contact_ids  = [c.get("ID") for c in run_contacts if c.get("ID")]
+                run_emails   = [o for o in outreach if o.get("Contact ID") in contact_ids]
+
+                run["Companies Found"] = len(run_companies)
+                run["Contacts Found"]  = len(run_contacts)
+                run["Emails Sent"]     = len(run_emails)
+
+            except Exception as row_err:
+                logger.warning(f"Skipping bad run row {run.get('ID')}: {row_err}")
+                run.setdefault("Companies Found", 0)
+                run.setdefault("Contacts Found", 0)
+                run.setdefault("Emails Sent", 0)
+
+        return sorted(
+            runs,
+            key=lambda x: x.get("Timestamp") or x.get("created_date") or "",
+            reverse=True,
+        )
+    except Exception as e:
+        logger.error(f"/api/runs failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/dashboard-stats")

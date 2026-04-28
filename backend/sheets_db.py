@@ -95,7 +95,25 @@ class SheetsDB:
     # --- Companies Tab ---
     def get_companies(self):
         ws = self._get_worksheet("Companies")
-        return ws.get_all_records() if ws else []
+        if not ws:
+            return []
+        records = ws.get_all_records()
+        # ── Column-swap normalizer ────────────────────────────────────────────
+        # Older rows written before the contacts_extracted column fix have:
+        #   Status          = ISO timestamp  (was Created Date)
+        #   Contacts Extracted = "discovered" (was Status)
+        #   Created Date    = ""             (was Contacts Extracted)
+        # Detect and fix at read time so the UI is always correct.
+        for r in records:
+            status = r.get("Status", "")
+            contacts_extracted = r.get("Contacts Extracted", "")
+            created_date = r.get("Created Date", "")
+            # A Status that looks like an ISO timestamp is actually a Created Date
+            if status and "T" in str(status) and ":" in str(status):
+                r["Created Date"] = status           # move timestamp to Created Date
+                r["Status"] = contacts_extracted or "discovered"  # recover real status
+                r["Contacts Extracted"] = ""         # clear the incorrectly set value
+        return records
 
     def get_pending_companies(self):
         """Returns only companies where Contacts Extracted is not 'Yes'."""
