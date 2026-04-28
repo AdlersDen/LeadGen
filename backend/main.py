@@ -275,16 +275,33 @@ async def dashboard_stats():
         outreach_logs = db.get_outreach_logs()
         runs = db.get_runs()
 
-        total_sent = len([o for o in outreach_logs if o.get("Status", "").lower() == "sent"])
-        total_replied = len([o for o in outreach_logs if o.get("Status", "").lower() == "replied"])
-        reply_rate = round((total_replied / total_sent * 100)) if total_sent > 0 else 0
+        # Count emails by status — "sent" = accepted by SendGrid (202 OK)
+        # Webhook updates to "delivered"/"opened" if configured
+        SENT_STATUSES      = {"sent", "delivered", "opened", "clicked", "replied"}
+        DELIVERED_STATUSES = {"delivered", "opened", "clicked", "replied"}
+        OPENED_STATUSES    = {"opened", "clicked"}
+        BOUNCED_STATUSES   = {"bounced", "bounce", "dropped"}
+
+        total_sent      = len([o for o in outreach_logs if (o.get("Status") or "").lower() in SENT_STATUSES])
+        total_delivered = len([o for o in outreach_logs if (o.get("Status") or "").lower() in DELIVERED_STATUSES])
+        total_opened    = len([o for o in outreach_logs if (o.get("Status") or "").lower() in OPENED_STATUSES])
+        total_bounced   = len([o for o in outreach_logs if (o.get("Status") or "").lower() in BOUNCED_STATUSES])
+        total_replied   = len([o for o in outreach_logs if (o.get("Status") or "").lower() == "replied"])
+
+        delivery_rate = round((total_delivered / total_sent * 100)) if total_sent > 0 else 0
+        open_rate     = round((total_opened    / total_sent * 100)) if total_sent > 0 else 0
+        bounce_rate   = round((total_bounced   / total_sent * 100)) if total_sent > 0 else 0
+        reply_rate    = round((total_replied   / total_sent * 100)) if total_sent > 0 else 0
 
         return {
-            "companies": len(companies),
-            "contacts": len(contacts),
-            "emails_sent": total_sent,
-            "reply_rate": reply_rate,
-            "recent_runs": runs[-10:],
+            "companies":       len(companies),
+            "contacts":        len(contacts),
+            "emails_sent":     total_sent,
+            "reply_rate":      reply_rate,
+            "delivery_rate":   delivery_rate,
+            "open_rate":       open_rate,
+            "bounce_rate":     bounce_rate,
+            "recent_runs":     runs[-10:],
             "recent_outreach": outreach_logs[-10:],
         }
     except Exception as e:

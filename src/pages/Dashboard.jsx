@@ -45,14 +45,21 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   });
 
-  const totalSent      = outreachLogs.length;
-  const delivered      = outreachLogs.filter((l) => (l.status || l['Status']) === 'delivered').length;
-  const opened         = outreachLogs.filter((l) => (l.status || l['Status']) === 'opened').length;
-  const bounced        = outreachLogs.filter((l) => (l.status || l['Status']) === 'bounced').length;
+  // Status hierarchy: sent -> delivered -> opened -> clicked -> replied
+  // "sent" means SendGrid accepted it (202 OK) = effectively delivered
+  const SENT_STATUSES      = new Set(['sent', 'delivered', 'opened', 'clicked', 'replied']);
+  const DELIVERED_STATUSES = new Set(['delivered', 'opened', 'clicked', 'replied']);
+  const OPENED_STATUSES    = new Set(['opened', 'clicked']);
+  const BOUNCED_STATUSES   = new Set(['bounced', 'bounce', 'dropped']);
 
-  const deliveryRate   = totalSent > 0 ? Math.round((delivered / totalSent) * 100) : 0;
-  const openRate       = delivered > 0  ? Math.round((opened    / delivered) * 100) : 0;
-  const bounceRate     = totalSent > 0 ? Math.round((bounced   / totalSent) * 100) : 0;
+  const totalSent = outreachLogs.filter((l) => SENT_STATUSES.has((l.status || l['Status'] || '').toLowerCase())).length;
+  const delivered = outreachLogs.filter((l) => DELIVERED_STATUSES.has((l.status || l['Status'] || '').toLowerCase())).length;
+  const opened    = outreachLogs.filter((l) => OPENED_STATUSES.has((l.status || l['Status'] || '').toLowerCase())).length;
+  const bounced   = outreachLogs.filter((l) => BOUNCED_STATUSES.has((l.status || l['Status'] || '').toLowerCase())).length;
+
+  const deliveryRate = totalSent > 0 ? Math.round((delivered / totalSent) * 100) : 0;
+  const openRate     = totalSent > 0 ? Math.round((opened    / totalSent) * 100) : 0;
+  const bounceRate   = totalSent > 0 ? Math.round((bounced   / totalSent) * 100) : 0;
 
   // -- Activity feed ------------------------------------------------------------
   const recentRuns = (stats.recent_runs || []).map((r) => {
