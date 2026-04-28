@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,6 +15,8 @@ export default function Contacts() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [panelOpen, setPanelOpen] = useState(false);
+  const [extractProgress, setExtractProgress] = useState(null); // { total, remaining, pct }
+  const pollRef = useRef(null);
   const queryClient = useQueryClient();
 
   // ── Contacts list ──────────────────────────────────────────────────────────
@@ -34,7 +36,23 @@ export default function Contacts() {
   const extractMutation = useMutation({
     mutationFn: (company_ids) =>
       apiClient.post('/contacts/extract-selected', { company_ids }),
+    onMutate: (company_ids) => {
+      // Start polling progress every 3s
+      const total = company_ids.length;
+      setExtractProgress({ total, remaining: total, pct: 0 });
+      pollRef.current = setInterval(async () => {
+        try {
+          const pending = await apiClient.get('/companies/pending');
+          const remaining = pending.length;
+          const done = Math.max(0, total - remaining);
+          const pct  = Math.round((done / total) * 100);
+          setExtractProgress({ total, remaining, pct });
+        } catch (_) { /* silent */ }
+      }, 3000);
+    },
     onSuccess: (data) => {
+      clearInterval(pollRef.current);
+      setExtractProgress(null);
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['companies-pending'] });
@@ -46,9 +64,14 @@ export default function Contacts() {
       );
     },
     onError: (err) => {
+      clearInterval(pollRef.current);
+      setExtractProgress(null);
       toast.error(err.message || 'Extraction failed. Please try again.');
     },
   });
+
+  // Cleanup poll on unmount
+  useEffect(() => () => clearInterval(pollRef.current), []);
 
   // ── Selection helpers ──────────────────────────────────────────────────────
   const pendingIds = pendingCompanies.map(c => c.ID || c.id).filter(Boolean);
@@ -150,6 +173,32 @@ export default function Contacts() {
               </Button>
             )}
           </div>
+
+          {/* ── Live progress bar (visible only during extraction) ──── */}
+          {extractMutation.isPending && extractProgress && (
+            <div className="px-5 py-3 bg-primary/5 border-b border-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-primary flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Extracting contacts via Apollo.io…
+                </span>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Clock className="w-3 h-3" />
+                  ~{Math.ceil((extractProgress.total - (extractProgress.total - extractProgress.remaining)) * 7 / 60)} min remaining
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${Math.max(5, extractProgress.pct)}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                {extractProgress.total - extractProgress.remaining} of {extractProgress.total} companies processed
+              </p>
+            </div>
+          )}
 
           {/* Pending companies list */}
           {isPendingLoading ? (

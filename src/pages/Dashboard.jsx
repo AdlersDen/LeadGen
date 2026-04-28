@@ -1,7 +1,10 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Building2, Users, Mail, MapPin, ArrowRight } from 'lucide-react';
+import {
+  Building2, Users, Mail, MapPin, ArrowRight,
+  CheckCircle2, AlertTriangle, MousePointerClick, TrendingUp,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import StatCard from '@/components/dashboard/StatCard';
@@ -12,7 +15,7 @@ export default function Dashboard() {
   const { data: stats = {} } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => apiClient.get('/dashboard-stats'),
-    refetchInterval: 30000, // refresh every 30s
+    refetchInterval: 30_000,
   });
 
   const { data: companies = [] } = useQuery({
@@ -20,22 +23,35 @@ export default function Dashboard() {
     queryFn: () => apiClient.get('/companies'),
   });
 
-  const sentEmails = stats.emails_sent ?? 0;
-  const replyRate = stats.reply_rate ?? 0;
+  // ── Delivery analytics derived from outreach logs ───────────────────────────
+  const { data: outreachLogs = [] } = useQuery({
+    queryKey: ['outreach'],
+    queryFn: () => apiClient.get('/outreach'),
+    refetchInterval: 60_000,
+  });
 
-  // Build activity feed from recent runs + outreach logs
+  const totalSent      = outreachLogs.length;
+  const delivered      = outreachLogs.filter((l) => (l.status || l['Status']) === 'delivered').length;
+  const opened         = outreachLogs.filter((l) => (l.status || l['Status']) === 'opened').length;
+  const bounced        = outreachLogs.filter((l) => (l.status || l['Status']) === 'bounced').length;
+
+  const deliveryRate   = totalSent > 0 ? Math.round((delivered / totalSent) * 100) : 0;
+  const openRate       = delivered > 0  ? Math.round((opened    / delivered) * 100) : 0;
+  const bounceRate     = totalSent > 0 ? Math.round((bounced   / totalSent) * 100) : 0;
+
+  // ── Activity feed ────────────────────────────────────────────────────────────
   const recentRuns = (stats.recent_runs || []).map((r) => ({
-    type: 'discovery',
-    title: `Pincode run: ${r.Pincode || r.pincode}`,
+    type:     'discovery',
+    title:    `Pincode run: ${r.Pincode || r.pincode}`,
     subtitle: `${r['Companies Found'] || r.companies_found || 0} companies found`,
-    date: r.Timestamp || r.created_date,
+    date:     r.Timestamp || r.created_date,
   }));
 
   const recentOutreach = (stats.recent_outreach || []).map((o) => ({
-    type: 'email',
-    title: `Email to ${o['Contact Email'] || o.contact_email}`,
+    type:     'email',
+    title:    `Email to ${o['Contact Email'] || o.contact_email}`,
     subtitle: o['Company Name'] || o.company_name,
-    date: o.Timestamp || o.created_date,
+    date:     o.Timestamp || o.created_date,
   }));
 
   const activities = [...recentRuns, ...recentOutreach]
@@ -44,13 +60,14 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-sm mt-1">Your lead intelligence overview</p>
         </div>
         <Link to="/discover">
-          <Button className="gap-2">
+          <Button className="gap-2" id="new-discovery-btn">
             <MapPin className="w-4 h-4" />
             New Discovery
             <ArrowRight className="w-4 h-4" />
@@ -58,13 +75,51 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      {/* ── Primary stats row ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Companies" value={stats.companies ?? 0} icon={Building2} />
-        <StatCard title="Contacts" value={stats.contacts ?? 0} icon={Users} />
-        <StatCard title="Emails Sent" value={sentEmails} icon={Mail} />
-        <StatCard title="Reply Rate" value={`${replyRate}%`} icon={MapPin} />
+        <StatCard title="Companies"    value={stats.companies ?? 0} icon={Building2} />
+        <StatCard title="Contacts"     value={stats.contacts  ?? 0} icon={Users} />
+        <StatCard title="Emails Sent"  value={totalSent}            icon={Mail} />
+        <StatCard title="Reply Rate"   value={`${stats.reply_rate ?? 0}%`} icon={TrendingUp} />
       </div>
 
+      {/* ── Email delivery analytics row (from SendGrid webhook data) ───── */}
+      <div>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+          Email Delivery Analytics
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard
+            title="Delivery Rate"
+            value={`${deliveryRate}%`}
+            icon={CheckCircle2}
+            trend={deliveryRate > 0 ? deliveryRate - 100 : undefined}
+            trendLabel={`${delivered} delivered`}
+          />
+          <StatCard
+            title="Open Rate"
+            value={`${openRate}%`}
+            icon={MousePointerClick}
+            trend={openRate > 0 ? openRate : undefined}
+            trendLabel={`${opened} opened`}
+          />
+          <StatCard
+            title="Bounce Rate"
+            value={`${bounceRate}%`}
+            icon={AlertTriangle}
+            trend={bounceRate > 0 ? -bounceRate : undefined}
+            trendLabel={`${bounced} bounced`}
+            className={bounceRate > 5 ? 'border-destructive/40' : ''}
+          />
+        </div>
+        {totalSent === 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Delivery analytics will appear here once emails have been sent and SendGrid webhook events are received.
+          </p>
+        )}
+      </div>
+
+      {/* ── Pipeline chart + activity feed ──────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-3">
           <PipelineChart companies={companies} />
