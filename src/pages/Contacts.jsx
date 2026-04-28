@@ -32,6 +32,13 @@ export default function Contacts() {
     staleTime: 0,
   });
 
+  // ── 90-day cooldown status map (email -> bool) ────────────────────────────
+  const { data: cooldownMap = {} } = useQuery({
+    queryKey: ['cooldown-status'],
+    queryFn: () => apiClient.get('/contacts/cooldown-status'),
+    staleTime: 60_000,
+  });
+
   // ── Extraction mutation ────────────────────────────────────────────────────
   const extractMutation = useMutation({
     mutationFn: (company_ids) =>
@@ -314,6 +321,14 @@ export default function Contacts() {
                           </span>
                         </div>
                         <span className="font-medium text-sm">{fullName || '—'}</span>
+                        {cooldownMap[email] && (
+                          <span
+                            title="Already contacted within 90 days — outreach skipped."
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 cursor-help border border-amber-200 flex-shrink-0"
+                          >
+                            ⏱ In Cooldown
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>

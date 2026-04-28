@@ -176,6 +176,26 @@ async def list_contacts():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+@app.get("/api/contacts/cooldown-status")
+async def get_cooldown_status():
+    """
+    Returns a dict mapping email -> bool indicating 90-day cooldown status.
+    Used by the frontend to show 'In Cooldown' badges on Contacts and Outreach pages.
+    """
+    try:
+        contacts = db.get_contacts()
+        result = {}
+        for contact in contacts:
+            email = (contact.get("Email") or "").strip()
+            if email:
+                result[email] = db.is_contact_recently_emailed(email)
+        return result
+    except Exception as e:
+        logger.error(f"/api/contacts/cooldown-status failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/outreach")
 async def list_outreach():
     """Returns all outreach log records from the Google Sheet."""

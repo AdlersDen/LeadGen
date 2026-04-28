@@ -170,6 +170,13 @@ export default function Outreach() {
     queryFn: () => apiClient.get('/contacts'),
   });
 
+  // -- 90-day cooldown status map (email -> bool) --
+  const { data: cooldownMap = {} } = useQuery({
+    queryKey: ['cooldown-status'],
+    queryFn: () => apiClient.get('/contacts/cooldown-status'),
+    staleTime: 60_000,
+  });
+
   const generatePitchMutation = useMutation({
     mutationFn: async (contactId) => {
       const contact = contacts.find((c) => (c.id || c['ID']) === contactId);
@@ -251,7 +258,7 @@ export default function Outreach() {
             <DialogHeader>
               <DialogTitle>AI-Powered Outreach</DialogTitle>
               <DialogDescription>
-                Pick a contact, generate a personalized pitch via Gemini AI, edit if needed, and send � all in one place.
+                Pick a contact, generate a personalized pitch via Gemini AI, edit if needed, and send � all in one place.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-2">
@@ -268,6 +275,18 @@ export default function Outreach() {
                   }}
                 />
               </div>
+
+              {/* Cooldown warning for selected contact */}
+              {selectedContactId && (() => {
+                const sel = contacts.find((ct) => (ct.id || ct['ID']) === selectedContactId);
+                const selEmail = (sel?.email || sel?.['Email'] || '').trim();
+                return selEmail && cooldownMap[selEmail] ? (
+                  <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <span className="text-base">⏱</span>
+                    <span>This contact was already emailed within the last 90 days. Sending is disabled.</span>
+                  </div>
+                ) : null;
+              })()}
 
               {selectedContactId && !generatedPitch.subject && (
                 <Button
@@ -314,7 +333,7 @@ export default function Outreach() {
                     </Button>
                     <Button
                       className="flex-1 gap-2"
-                      disabled={sendEmailMutation.isPending || !generatedPitch.body.trim()}
+                      disabled={sendEmailMutation.isPending || !generatedPitch.body.trim() || (() => { const sel = contacts.find((c) => (c.id || c['ID']) === selectedContactId); const selEmail = sel?.email || sel?.['Email'] || ''; return cooldownMap[selEmail]; })()}
                       onClick={() => sendEmailMutation.mutate()}
                       id="send-email-btn"
                     >
@@ -384,7 +403,17 @@ export default function Outreach() {
                   <TableRow key={id} className="hover:bg-muted/30">
                     <TableCell>
                       <div>
-                        <p className="font-medium text-sm">{name || email}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-sm">{name || email}</p>
+                          {email && cooldownMap[email] && (
+                            <span
+                              title="Already contacted within 90 days — outreach skipped."
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 cursor-help border border-amber-200 flex-shrink-0"
+                            >
+                              ⏱ In Cooldown
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">{email}</p>
                       </div>
                     </TableCell>
