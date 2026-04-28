@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import AppLayout from '@/components/layout/AppLayout';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import Dashboard from '@/pages/Dashboard';
 import Discover from '@/pages/Discover';
 import Companies from '@/pages/Companies';
@@ -20,15 +21,15 @@ function App() {
         <Router>
           <Routes>
             <Route element={<AppLayout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/discover" element={<Discover />} />
-              <Route path="/companies" element={<Companies />} />
-              <Route path="/contacts" element={<Contacts />} />
-              <Route path="/outreach" element={<Outreach />} />
-              <Route path="/runs" element={<Runs />} />
+              <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+              <Route path="/discover" element={<ErrorBoundary><Discover /></ErrorBoundary>} />
+              <Route path="/companies" element={<ErrorBoundary><Companies /></ErrorBoundary>} />
+              <Route path="/contacts" element={<ErrorBoundary><Contacts /></ErrorBoundary>} />
+              <Route path="/outreach" element={<ErrorBoundary><Outreach /></ErrorBoundary>} />
+              <Route path="/runs" element={<ErrorBoundary><Runs /></ErrorBoundary>} />
             </Route>
             {/* Standalone page — no AppLayout nav */}
-            <Route path="/unsubscribe" element={<Unsubscribe />} />
+            <Route path="/unsubscribe" element={<ErrorBoundary><Unsubscribe /></ErrorBoundary>} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Router>

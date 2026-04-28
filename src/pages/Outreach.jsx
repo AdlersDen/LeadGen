@@ -209,6 +209,7 @@ export default function Outreach() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outreach'] });
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['cooldown-status'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       setShowCompose(false);
@@ -277,15 +278,18 @@ export default function Outreach() {
               </div>
 
               {/* Cooldown warning for selected contact */}
-              {selectedContactId && (() => {
-                const sel = contacts.find((ct) => (ct.id || ct['ID']) === selectedContactId);
-                const selEmail = (sel?.email || sel?.['Email'] || '').trim();
-                return selEmail && cooldownMap[selEmail] ? (
-                  <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <span className="text-base">⏱</span>
-                    <span>This contact was already emailed within the last 90 days. Sending is disabled.</span>
-                  </div>
-                ) : null;
+              {(() => {
+                try {
+                  if (!selectedContactId) return null;
+                  const sel = contacts.find((ct) => (ct.id || ct['ID']) === selectedContactId);
+                  const selEmail = (sel?.email || sel?.['Email'] || '').trim();
+                  return selEmail && cooldownMap[selEmail] ? (
+                    <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <span className="text-base">⏱</span>
+                      <span>This contact was already emailed within the last 90 days. Sending is disabled.</span>
+                    </div>
+                  ) : null;
+                } catch { return null; }
               })()}
 
               {selectedContactId && !generatedPitch.subject && (
@@ -333,7 +337,7 @@ export default function Outreach() {
                     </Button>
                     <Button
                       className="flex-1 gap-2"
-                      disabled={sendEmailMutation.isPending || !generatedPitch.body.trim() || (() => { const sel = contacts.find((c) => (c.id || c['ID']) === selectedContactId); const selEmail = sel?.email || sel?.['Email'] || ''; return cooldownMap[selEmail]; })()}
+                      disabled={sendEmailMutation.isPending || !generatedPitch.body.trim() || (() => { try { const sel = contacts.find((ct) => (ct.id || ct['ID']) === selectedContactId); const selEmail = (sel?.email || sel?.['Email'] || '').trim(); return !!(selEmail && cooldownMap[selEmail]); } catch { return false; } })()}
                       onClick={() => sendEmailMutation.mutate()}
                       id="send-email-btn"
                     >
@@ -423,7 +427,13 @@ export default function Outreach() {
                     </TableCell>
                     <TableCell><StatusBadge status={status} /></TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {timestamp ? format(new Date(timestamp), 'MMM d, h:mm a') : '—'}
+                      {(() => {
+                        if (!timestamp) return '—';
+                        try {
+                          const d = new Date(timestamp);
+                          return isNaN(d.getTime()) ? '—' : format(d, 'MMM d, h:mm a');
+                        } catch { return '—'; }
+                      })()}
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => setPreviewLog(log)} aria-label="Preview email">
