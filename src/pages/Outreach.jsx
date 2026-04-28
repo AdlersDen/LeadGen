@@ -237,6 +237,14 @@ export default function Outreach() {
     setSelectedContactId('');
   };
 
+  // Pre-compute selected contact + cooldown status safely
+  const selectedContact = selectedContactId
+    ? contacts.find((c) => (c.id || c['ID']) === selectedContactId) || null
+    : null;
+  const selectedEmail = (selectedContact?.email || selectedContact?.['Email'] || '').trim();
+  const selectedInCooldown = !!(selectedEmail && cooldownMap && cooldownMap[selectedEmail]);
+  const canSend = !sendEmailMutation.isPending && !!(generatedPitch.body || '').trim() && !selectedInCooldown;
+
   return (
     <div className="space-y-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -278,19 +286,11 @@ export default function Outreach() {
               </div>
 
               {/* Cooldown warning for selected contact */}
-              {(() => {
-                try {
-                  if (!selectedContactId) return null;
-                  const sel = contacts.find((ct) => (ct.id || ct['ID']) === selectedContactId);
-                  const selEmail = (sel?.email || sel?.['Email'] || '').trim();
-                  return selEmail && cooldownMap[selEmail] ? (
-                    <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      <span className="text-base">⏱</span>
-                      <span>This contact was already emailed within the last 90 days. Sending is disabled.</span>
-                    </div>
-                  ) : null;
-                } catch { return null; }
-              })()}
+              {selectedInCooldown && (
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span>⏱ This contact was already emailed within the last 90 days. Sending is disabled.</span>
+                </div>
+              )}
 
               {selectedContactId && !generatedPitch.subject && (
                 <Button
@@ -337,7 +337,7 @@ export default function Outreach() {
                     </Button>
                     <Button
                       className="flex-1 gap-2"
-                      disabled={sendEmailMutation.isPending || !generatedPitch.body.trim() || (() => { try { const sel = contacts.find((ct) => (ct.id || ct['ID']) === selectedContactId); const selEmail = (sel?.email || sel?.['Email'] || '').trim(); return !!(selEmail && cooldownMap[selEmail]); } catch { return false; } })()}
+                      disabled={!canSend}
                       onClick={() => sendEmailMutation.mutate()}
                       id="send-email-btn"
                     >
