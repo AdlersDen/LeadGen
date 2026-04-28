@@ -11,6 +11,16 @@ import StatCard from '@/components/dashboard/StatCard';
 import RecentActivity from '@/components/dashboard/RecentActivity';
 import PipelineChart from '@/components/dashboard/PipelineChart';
 
+function readField(record, ...keys) {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 export default function Dashboard() {
   const { data: stats = {} } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -21,6 +31,11 @@ export default function Dashboard() {
   const { data: companies = [] } = useQuery({
     queryKey: ['companies'],
     queryFn: () => apiClient.get('/companies'),
+  });
+
+  const { data: contacts = [] } = useQuery({
+    queryKey: ['contacts'],
+    queryFn: () => apiClient.get('/contacts'),
   });
 
   // ── Delivery analytics derived from outreach logs ───────────────────────────
@@ -40,12 +55,19 @@ export default function Dashboard() {
   const bounceRate     = totalSent > 0 ? Math.round((bounced   / totalSent) * 100) : 0;
 
   // ── Activity feed ────────────────────────────────────────────────────────────
-  const recentRuns = (stats.recent_runs || []).map((r) => ({
-    type:     'discovery',
-    title:    `Pincode run: ${r.Pincode || r.pincode}`,
-    subtitle: `${r['Companies Found'] || r.companies_found || 0} companies found`,
-    date:     r.Timestamp || r.created_date,
-  }));
+  const recentRuns = (stats.recent_runs || []).map((r) => {
+    const pincode = String(readField(r, 'Pincode', 'pincode') || '').trim();
+    const complexName = String(readField(r, 'Complex Name', 'complex_name') || '').trim();
+    const location = String(readField(r, 'Location Name', 'location_name') || '').trim();
+    const label = pincode || complexName || location || 'Discovery';
+
+    return {
+      type: 'discovery',
+      title: pincode ? `Pincode run: ${label}` : `Area run: ${label}`,
+      subtitle: `${readField(r, 'Companies Found', 'companies_found') || 0} companies found`,
+      date: readField(r, 'Timestamp', 'created_date'),
+    };
+  });
 
   const recentOutreach = (stats.recent_outreach || []).map((o) => ({
     type:     'email',
@@ -55,8 +77,13 @@ export default function Dashboard() {
   }));
 
   const activities = [...recentRuns, ...recentOutreach]
+    .filter((activity) => activity.date)
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 8);
+
+  const totalCompanies = companies.length || stats.companies || 0;
+  const totalContacts = contacts.length || stats.contacts || 0;
+  const replyRate = stats.reply_rate ?? 0;
 
   return (
     <div className="space-y-8">
@@ -77,10 +104,10 @@ export default function Dashboard() {
 
       {/* ── Primary stats row ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Companies"    value={stats.companies ?? 0} icon={Building2} />
-        <StatCard title="Contacts"     value={stats.contacts  ?? 0} icon={Users} />
+        <StatCard title="Companies"    value={totalCompanies} icon={Building2} />
+        <StatCard title="Contacts"     value={totalContacts} icon={Users} />
         <StatCard title="Emails Sent"  value={totalSent}            icon={Mail} />
-        <StatCard title="Reply Rate"   value={`${stats.reply_rate ?? 0}%`} icon={TrendingUp} />
+        <StatCard title="Reply Rate"   value={`${replyRate}%`} icon={TrendingUp} />
       </div>
 
       {/* ── Email delivery analytics row (from SendGrid webhook data) ───── */}

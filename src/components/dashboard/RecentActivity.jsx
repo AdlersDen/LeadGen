@@ -34,6 +34,8 @@ export default function RecentActivity({ activities }) {
         {activities.map((activity, i) => {
           const Icon = iconMap[activity.type] || Building2;
           const color = colorMap[activity.type] || colorMap.company;
+          const parsedDate = activity.date ? new Date(activity.date) : null;
+          const hasValidDate = parsedDate && !Number.isNaN(parsedDate.getTime());
           return (
             <div key={i} className="flex items-start gap-3 group">
               <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5", color)}>
@@ -44,7 +46,7 @@ export default function RecentActivity({ activities }) {
                 <p className="text-xs text-muted-foreground">{activity.subtitle}</p>
               </div>
               <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {format(new Date(activity.date), 'MMM d, h:mm a')}
+                {hasValidDate ? format(parsedDate, 'MMM d, h:mm a') : '—'}
               </span>
             </div>
           );

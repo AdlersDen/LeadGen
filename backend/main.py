@@ -197,7 +197,9 @@ async def get_runs():
         for run in runs:
             try:
                 pincode  = str(run.get("Pincode") or run.get("pincode") or "").strip()
+                complex_name = str(run.get("Complex Name") or run.get("complex_name") or "").strip()
                 location = str(run.get("Location Name") or run.get("location_name") or "").strip()
+                effective_location = location or complex_name
 
                 if pincode:
                     # Pincode mode — match companies by pincode field
@@ -205,9 +207,9 @@ async def get_runs():
                         c for c in companies
                         if str(c.get("Pincode") or c.get("pincode") or "").strip() == pincode
                     ]
-                elif location:
+                elif effective_location:
                     # Complex-mode run (no pincode) — fuzzy match by location name
-                    loc_lower = location.lower()
+                    loc_lower = effective_location.lower()
                     run_companies = [
                         c for c in companies
                         if loc_lower in str(c.get("Address") or "").lower()
@@ -223,6 +225,10 @@ async def get_runs():
                 run["Companies Found"] = len(run_companies)
                 run["Contacts Found"]  = len(run_contacts)
                 run["Emails Sent"]     = len(run_emails)
+                if effective_location:
+                    run["Location Name"] = effective_location
+                if not pincode and complex_name:
+                    run["Pincode"] = "complex"
 
             except Exception as row_err:
                 logger.warning(f"Skipping bad run row {run.get('ID')}: {row_err}")
@@ -310,13 +316,14 @@ async def discover(req: DiscoverRequest):
         raise HTTPException(status_code=502, detail=f"Company discovery failed: {e}")
 
     companies     = result.get("companies", [])
-    location_name = result.get("location_name", req.complex_name or req.pincode)
+    location_name = result.get("location_name") or req.complex_name or req.pincode or ""
 
     saved_companies = db.add_companies_bulk(companies) if companies else []
 
     # Log the run
     db.add_run({
         "pincode":        req.pincode or "",
+        "complex_name":   req.complex_name or "",
         "location_name":  location_name,
         "companies_found": len(companies),
         "contacts_found": 0,
@@ -358,7 +365,7 @@ async def find_contacts_for_company(req: FindContactsRequest):
     saved_contacts = []
     for contact_data in raw_contacts:
         contact_data["company_name"] = req.company_name
-        contact_data["status"] = "discovered"
+        contact_data["status"] = "verified"
         saved = db.add_contact(contact_data, req.company_id)
         if saved:
             saved_contacts.append(saved)
@@ -405,7 +412,7 @@ async def bulk_find_contacts(req: BulkFindContactsRequest):
             
             for contact_data in raw_contacts:
                 contact_data["company_name"] = company_name
-                contact_data["status"] = "discovered"
+                contact_data["status"] = "verified"
                 saved = db.add_contact(contact_data, company_id)
                 if saved:
                     total_contacts_found += 1
@@ -469,7 +476,7 @@ async def extract_selected_contacts(req: ExtractSelectedRequest):
             
             for contact_data in raw_contacts:
                 contact_data["company_name"] = company_name
-                contact_data["status"] = "discovered"
+                contact_data["status"] = "verified"
                 db.add_contact(contact_data, company_id)
             
             # If we attempted extraction (even if 0 found), we consider it processed

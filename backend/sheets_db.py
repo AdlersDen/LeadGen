@@ -11,6 +11,26 @@ logger = logging.getLogger(__name__)
 
 SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
+SHEET_HEADERS = {
+    "Companies": [
+        "ID", "Name", "Industry", "Address", "Domain", "Pincode",
+        "Employee Count", "Tier", "Contacts Extracted", "Status", "Created Date",
+    ],
+    "Contacts": [
+        "ID", "Company ID", "Full Name", "Role", "Email",
+        "Confidence Score", "Status", "Company Name", "Source", "Created Date",
+    ],
+    "Outreach Logs": [
+        "ID", "Campaign ID", "Contact ID", "Contact Email", "Contact Name",
+        "Company Name", "Subject", "Body", "Status", "Message ID", "Timestamp",
+    ],
+    "Runs": [
+        "ID", "Pincode", "Complex Name", "Location Name", "Companies Found",
+        "Contacts Found", "Emails Sent", "Status", "Timestamp",
+    ],
+    "Blocklist": ["Email", "Timestamp"],
+}
+
 class SheetsDB:
     def __init__(self):
         self.client = None
@@ -73,24 +93,43 @@ class SheetsDB:
             return None
 
     def _ensure_headers(self, ws, title: str):
-        """Initializes headers if the sheet is completely empty."""
+        """Initializes missing headers while preserving any existing column order."""
         first_row = ws.row_values(1)
-        if not first_row:
-            headers = []
-            if title == "Companies":
-                headers = ["ID", "Name", "Industry", "Address", "Domain", "Pincode", "Employee Count", "Tier", "Contacts Extracted", "Status", "Created Date"]
-            elif title == "Contacts":
-                headers = ["ID", "Company ID", "Full Name", "Role", "Email", "Confidence Score", "Status", "Company Name", "Created Date"]
-            elif title == "Outreach Logs":
-                headers = ["ID", "Campaign ID", "Contact ID", "Contact Email", "Contact Name", "Company Name", "Subject", "Body", "Status", "Message ID", "Timestamp"]
-            elif title == "Runs":
-                headers = ["ID", "Pincode", "Location Name", "Companies Found", "Contacts Found", "Emails Sent", "Status", "Timestamp"]
-            elif title == "Blocklist":
-                headers = ["Email", "Timestamp"]
+        expected_headers = SHEET_HEADERS.get(title, [])
+        if not expected_headers:
+            return
 
-            if headers:
-                ws.append_row(headers)
-                logger.info(f"Initialized headers for {title} tab.")
+        if not first_row:
+            ws.append_row(expected_headers)
+            logger.info(f"Initialized headers for {title} tab.")
+            return
+
+        missing_headers = [header for header in expected_headers if header not in first_row]
+        if not missing_headers:
+            return
+
+        for idx, header in enumerate(missing_headers, start=len(first_row) + 1):
+            ws.update_cell(1, idx, header)
+        logger.info(f"Added missing headers for {title}: {', '.join(missing_headers)}")
+
+    def _get_headers(self, ws) -> list[str]:
+        headers = ws.row_values(1)
+        return headers if headers else []
+
+    def _build_row_for_headers(self, headers: list[str], data: dict) -> list:
+        return [data.get(header, "") for header in headers]
+
+    def _append_record(self, ws, data: dict):
+        headers = self._get_headers(ws)
+        if not headers:
+            return
+        ws.append_row(self._build_row_for_headers(headers, data))
+
+    def _append_records(self, ws, rows: list[dict]):
+        headers = self._get_headers(ws)
+        if not headers or not rows:
+            return
+        ws.append_rows([self._build_row_for_headers(headers, row) for row in rows])
 
     # --- Companies Tab ---
     def get_companies(self):
@@ -131,20 +170,20 @@ class SheetsDB:
         record_id = str(uuid.uuid4())
         date_added = datetime.now(timezone.utc).isoformat()
 
-        row = [
-            record_id,                                        # ID
-            company_data.get("name", ""),                    # Name
-            company_data.get("industry", ""),                # Industry
-            company_data.get("address", ""),                 # Address
-            company_data.get("domain", ""),                  # Domain
-            company_data.get("pincode", ""),                 # Pincode
-            company_data.get("employee_count", ""),          # Employee Count
-            company_data.get("tier", ""),                    # Tier
-            company_data.get("contacts_extracted", ""),      # Contacts Extracted ← was missing
-            company_data.get("status", "discovered"),        # Status
-            date_added                                        # Created Date
-        ]
-        ws.append_row(row)
+        row_data = {
+            "ID": record_id,
+            "Name": company_data.get("name", ""),
+            "Industry": company_data.get("industry", ""),
+            "Address": company_data.get("address", ""),
+            "Domain": company_data.get("domain", ""),
+            "Pincode": company_data.get("pincode", ""),
+            "Employee Count": company_data.get("employee_count", ""),
+            "Tier": company_data.get("tier", ""),
+            "Contacts Extracted": company_data.get("contacts_extracted", ""),
+            "Status": company_data.get("status", "discovered"),
+            "Created Date": date_added,
+        }
+        self._append_record(ws, row_data)
 
         company_data["id"] = record_id
         company_data["created_date"] = date_added
@@ -186,24 +225,23 @@ class SheetsDB:
         rows = []
         for company_data in new_companies:
             record_id = str(uuid.uuid4())
-            row = [
-                record_id,                                       # ID
-                company_data.get("name", ""),                   # Name
-                company_data.get("industry", ""),               # Industry
-                company_data.get("address", ""),                # Address
-                company_data.get("domain", ""),                 # Domain
-                company_data.get("pincode", ""),                # Pincode
-                company_data.get("employee_count", ""),         # Employee Count
-                company_data.get("tier", ""),                   # Tier
-                company_data.get("contacts_extracted", ""),     # Contacts Extracted ← was missing
-                company_data.get("status", "discovered"),       # Status
-                date_added                                       # Created Date
-            ]
-            rows.append(row)
+            rows.append({
+                "ID": record_id,
+                "Name": company_data.get("name", ""),
+                "Industry": company_data.get("industry", ""),
+                "Address": company_data.get("address", ""),
+                "Domain": company_data.get("domain", ""),
+                "Pincode": company_data.get("pincode", ""),
+                "Employee Count": company_data.get("employee_count", ""),
+                "Tier": company_data.get("tier", ""),
+                "Contacts Extracted": company_data.get("contacts_extracted", ""),
+                "Status": company_data.get("status", "discovered"),
+                "Created Date": date_added,
+            })
             company_data["id"] = record_id
             company_data["created_date"] = date_added
 
-        ws.append_rows(rows)
+        self._append_records(ws, rows)
         logger.info(f"Added {len(new_companies)} new companies to Sheets.")
         return new_companies
 
@@ -276,18 +314,19 @@ class SheetsDB:
         record_id = str(uuid.uuid4())
         date_added = datetime.now(timezone.utc).isoformat()
 
-        row = [
-            record_id,
-            company_id,
-            contact_data.get("full_name", ""),
-            contact_data.get("role", ""),
-            contact_data.get("email", ""),
-            contact_data.get("confidence_score", ""),
-            contact_data.get("status", "discovered"),
-            contact_data.get("company_name", ""),
-            date_added
-        ]
-        ws.append_row(row)
+        row_data = {
+            "ID": record_id,
+            "Company ID": company_id,
+            "Full Name": contact_data.get("full_name", ""),
+            "Role": contact_data.get("role", ""),
+            "Email": contact_data.get("email", ""),
+            "Confidence Score": contact_data.get("confidence_score", ""),
+            "Status": contact_data.get("status", "verified"),
+            "Company Name": contact_data.get("company_name", ""),
+            "Source": contact_data.get("source", ""),
+            "Created Date": date_added,
+        }
+        self._append_record(ws, row_data)
 
         contact_data["id"] = record_id
         contact_data["company_id"] = company_id
@@ -396,17 +435,19 @@ class SheetsDB:
         record_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        row = [
-            record_id,
-            run_data.get("pincode", ""),
-            run_data.get("location_name", ""),
-            run_data.get("companies_found", 0),
-            run_data.get("contacts_found", 0),
-            run_data.get("emails_sent", 0),
-            run_data.get("status", "completed"),
-            timestamp
-        ]
-        ws.append_row(row)
+        location_name = (run_data.get("location_name") or run_data.get("complex_name") or run_data.get("pincode") or "").strip()
+        row_data = {
+            "ID": record_id,
+            "Pincode": run_data.get("pincode", ""),
+            "Complex Name": run_data.get("complex_name", ""),
+            "Location Name": location_name,
+            "Companies Found": run_data.get("companies_found", 0),
+            "Contacts Found": run_data.get("contacts_found", 0),
+            "Emails Sent": run_data.get("emails_sent", 0),
+            "Status": run_data.get("status", "completed"),
+            "Timestamp": timestamp,
+        }
+        self._append_record(ws, row_data)
 
         run_data["id"] = record_id
         run_data["created_date"] = timestamp

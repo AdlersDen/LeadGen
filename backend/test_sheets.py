@@ -36,7 +36,7 @@ except Exception as e:
 
 try:
     ws = doc.worksheet("Companies")
-    ws.append_row(["TEST_ID", "Test Company", "IT", "Test Address", "", "400001", "", "discovered", "2024-01-01"])
+    ws.append_row(["TEST_ID", "Test Company", "IT", "Test Address", "", "400001", "", "", "", "discovered", "2024-01-01"])
     print("[OK] Test row written to 'Companies' tab successfully!")
     print("\n[SUCCESS] Everything is working! Delete the test row from your sheet.")
 except Exception as e:

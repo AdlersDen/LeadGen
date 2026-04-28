@@ -28,6 +28,31 @@ DAILY_SEND_LIMIT   = int(os.getenv("DAILY_SEND_LIMIT", "50"))
 _send_counter: dict[str, int] = {}   # { "YYYY-MM-DD": count }
 
 
+def _format_sendgrid_error(err: Exception) -> str:
+    """Return the most useful SendGrid error message we can extract."""
+    status_code = getattr(err, "status_code", None)
+    body = getattr(err, "body", None)
+
+    body_text = ""
+    if isinstance(body, bytes):
+        body_text = body.decode("utf-8", errors="replace")
+    elif body:
+        body_text = str(body)
+
+    if status_code == 403:
+        hint = (
+            "SendGrid rejected the request with 403 Forbidden. "
+            "Check that the API key has Mail Send permission and that "
+            f"'{FROM_EMAIL}' is a verified sender identity."
+        )
+        return f"{hint} Response: {body_text or str(err)}"
+
+    if body_text:
+        return body_text
+
+    return str(err)
+
+
 def _check_daily_limit() -> bool:
     """
     Returns True if we are still within today's send quota.
@@ -181,5 +206,6 @@ def send_email(
             return {"success": False, "message_id": None, "error": error_msg}
 
     except Exception as e:
-        logger.error(f"SendGrid dispatch failed for {to_email}: {e}")
-        return {"success": False, "message_id": None, "error": str(e)}
+        error_message = _format_sendgrid_error(e)
+        logger.error(f"SendGrid dispatch failed for {to_email}: {error_message}")
+        return {"success": False, "message_id": None, "error": error_message}

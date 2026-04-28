@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { toast } from 'sonner';
@@ -207,7 +207,7 @@ export default function Outreach() {
       setShowCompose(false);
       setGeneratedPitch({ subject: '', body: '' });
       setSelectedContactId('');
-      toast.success('Email sent via marketing@adlersden.com!');
+      toast.success('Email sent successfully.');
     },
     onError: (err) => toast.error(err.message || 'Failed to send email'),
   });
@@ -250,6 +250,9 @@ export default function Outreach() {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>AI-Powered Outreach</DialogTitle>
+              <DialogDescription>
+                Generate and review a personalized email before sending it through SendGrid.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 pt-2">
 
@@ -411,6 +414,9 @@ export default function Outreach() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Email Preview</DialogTitle>
+            <DialogDescription>
+              Preview the exact outreach email content saved in the outreach log.
+            </DialogDescription>
           </DialogHeader>
           {previewLog && (
             <div className="space-y-4 pt-2">

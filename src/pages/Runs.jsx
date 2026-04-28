@@ -60,8 +60,9 @@ export default function Runs() {
             ) : (
               runs.map((run, idx) => {
                 const id = run.id || run['ID'] || idx;
-                const pincode = run.pincode || run['Pincode'];
-                const location = run.location_name || run['Location Name'];
+                const pincode = String(run.pincode || run['Pincode'] || '').trim();
+                const complexName = String(run.complex_name || run['Complex Name'] || '').trim();
+                const location = String(run.location_name || run['Location Name'] || complexName).trim();
                 const companiesFound = run.companies_found ?? run['Companies Found'] ?? 0;
                 const contactsFound = run.contacts_found ?? run['Contacts Found'] ?? 0;
                 const emailsSent = run.emails_sent ?? run['Emails Sent'] ?? 0;
@@ -73,7 +74,7 @@ export default function Runs() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-primary" />
-                        <span className="font-mono font-semibold text-sm">{pincode}</span>
+                        <span className="font-mono font-semibold text-sm">{pincode || complexName || 'complex'}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">{location || '—'}</TableCell>
