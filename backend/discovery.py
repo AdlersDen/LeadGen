@@ -106,17 +106,33 @@ def _fetch_places(lat: float, lng: float, radius_m: int = 2000, page_token: str 
 def _fetch_text_search(query: str) -> list:
     """
     Google Maps Text Search — used for complex / area mode.
-    Returns raw place results matching the query string.
+    Works globally — no lat/lng required.
+    Fetches up to 2 pages (max ~40 results) to improve coverage.
     """
+    import time as _time
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {"query": query, "key": MAPS_API_KEY}
+    all_results = []
     try:
         resp = requests.get(url, params=params, timeout=15)
         resp.raise_for_status()
-        return resp.json().get("results", [])
+        data = resp.json()
+        all_results.extend(data.get("results", []))
+        logger.info(f"Text search page 1: {len(all_results)} results for '{query}'")
+
+        # Fetch second page if available (Google requires ~2s delay)
+        next_page_token = data.get("next_page_token")
+        if next_page_token:
+            _time.sleep(2)
+            resp2 = requests.get(url, params={"pagetoken": next_page_token, "key": MAPS_API_KEY}, timeout=15)
+            resp2.raise_for_status()
+            page2 = resp2.json().get("results", [])
+            all_results.extend(page2)
+            logger.info(f"Text search page 2: +{len(page2)} results for '{query}'")
+
     except Exception as e:
         logger.error(f"Text search failed for '{query}': {e}")
-        return []
+    return all_results
 
 
 def _is_b2b_company(place: dict) -> bool:
@@ -215,18 +231,18 @@ def discover_companies(
         logger.error("GOOGLE_MAPS_API_KEY is not set.")
         return {"location_name": complex_name or pincode, "companies": []}
 
-    # ── Complex / Area mode ───────────────────────────────────────────────────
+    # ── Complex / Area mode (Text Search — works globally) ────────────────────
     if complex_name:
         location_name = complex_name
         if industries:
             industry_terms = " ".join(
-                INDUSTRY_KEYWORDS.get(ind, ind) for ind in industries
+                INDUSTRY_KEYWORDS.get(ind, ind) for ind in industries[:2]
             )
             query = f"{industry_terms} companies in {complex_name}"
         else:
-            query = f"corporate offices companies in {complex_name}"
+            query = f"corporate offices in {complex_name}"
 
-        logger.info(f"Text search: {query}")
+        logger.info(f"Text search (global): {query}")
         all_places = _fetch_text_search(query)
         b2b_places = [p for p in all_places if _is_b2b_company(p)]
         logger.info(

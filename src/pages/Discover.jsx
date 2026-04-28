@@ -9,22 +9,90 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
-// ─── Hardcoded business complex suggestions ───────────────────────────────────
+// // ─── Global business complex suggestions ─────────────────────────────────────
 const COMPLEXES = [
+  // Mumbai
   'Bandra Kurla Complex Mumbai',
-  'Mindspace Business Park Malad',
-  'Nesco IT Park Goregaon',
-  'Oberoi Commerz Goregaon',
+  'Mindspace Business Park Malad Mumbai',
+  'Nesco IT Park Goregaon Mumbai',
+  'Oberoi Commerz Goregaon Mumbai',
+  'Peninsula Corporate Park Lower Parel Mumbai',
+  'Equinox Business Park Kurla Mumbai',
+  'Supreme Business Park Powai Mumbai',
+  '72 Business Park Andheri East Mumbai',
   'One BKC Mumbai',
-  'Lower Parel Mumbai',
   'Nariman Point Mumbai',
-  'Powai Mumbai',
   'Andheri MIDC Mumbai',
-  'Thane Wagle Estate',
-  'Vashi Navi Mumbai',
-  'Belapur CBD Navi Mumbai',
+  // Pune
   'Hinjewadi IT Park Pune',
   'Magarpatta City Pune',
+  'EON IT Park Kharadi Pune',
+  'World Trade Center Pune',
+  'Panchshil Tech Park Pune',
+  // Bangalore
+  'Manyata Tech Park Bangalore',
+  'Electronic City Bangalore',
+  'Bagmane Tech Park Bangalore',
+  'RMZ Ecospace Bangalore',
+  'Embassy Golf Links Bangalore',
+  'Prestige Tech Park Bangalore',
+  // Hyderabad
+  'HITEC City Hyderabad',
+  'Cyberabad Hyderabad',
+  'Mindspace IT Park Hyderabad',
+  'DLF Cybercity Hyderabad',
+  // Delhi NCR
+  'Cyber City Gurugram',
+  'DLF Cyber Hub Gurugram',
+  'Unitech Cyber Park Gurugram',
+  'Noida Special Economic Zone',
+  'World Trade Tower Noida',
+  'Connaught Place New Delhi',
+  // Chennai
+  'Tidel Park Chennai',
+  'RMZ Millenia Chennai',
+  'DLF IT Park Chennai',
+  // Navi Mumbai / Thane
+  'Belapur CBD Navi Mumbai',
+  'Vashi Navi Mumbai',
+  'Thane Wagle Estate',
+  'Gigaplex Estate Airoli',
+  // Dubai
+  'Dubai Internet City',
+  'Dubai Media City',
+  'DIFC Dubai',
+  'Dubai Silicon Oasis',
+  'Business Bay Dubai',
+  'Jumeirah Lake Towers Dubai',
+  // Singapore
+  'One Raffles Place Singapore',
+  'Marina Bay Financial Centre Singapore',
+  'Mapletree Business City Singapore',
+  'one-north Singapore',
+  // London
+  'Canary Wharf London',
+  'The Shard London',
+  'City of London',
+  'White City Place London',
+  'Hammersmith London',
+  // New York
+  'Hudson Yards New York',
+  'World Trade Center New York',
+  'Midtown Manhattan New York',
+  'Silicon Alley New York',
+  // San Francisco
+  'Financial District San Francisco',
+  'South of Market San Francisco',
+  'Silicon Valley California',
+  // Other global
+  'La Defense Paris',
+  'Zuidas Amsterdam',
+  'Frankfurt Financial District',
+  'ADGM Abu Dhabi',
+  'Bahrain Financial Harbour',
+  'Bonifacio Global City Manila',
+  'Ortigas Center Manila',
+  'Sudirman Central Business District Jakarta',
 ];
 
 // ─── Industry filter options ──────────────────────────────────────────────────
@@ -63,6 +131,9 @@ export default function Discover() {
   const [selectedIndustries, setSelectedIndustries] = useState(new Set());
   const [selectedTiers, setSelectedTiers]           = useState(new Set(['A', 'B']));
 
+  // ─── Search hint (shown below complex input) ──────────────────────────────
+  const [searchHint, setSearchHint] = useState('');
+
   // ─── Errors ────────────────────────────────────────────────────────────────
   const [pincodeError, setPincodeError]   = useState('');
   const [complexError, setComplexError]   = useState('');
@@ -92,9 +163,10 @@ export default function Discover() {
   const handleComplexInput = (val) => {
     setComplexName(val);
     setComplexError('');
+    setSearchHint(val.trim() ? `Will search: "corporate offices in ${val.trim()}"` : "");
     if (val.length >= 2) {
       const q = val.toLowerCase();
-      setSuggestions(COMPLEXES.filter((c) => c.toLowerCase().includes(q)));
+      setSuggestions(COMPLEXES.filter((s) => s.toLowerCase().includes(q)).slice(0, 8));
       setShowSuggestions(true);
     } else {
       setShowSuggestions(false);
@@ -189,6 +261,7 @@ export default function Discover() {
     setComplexName('');
     setDiscoveredCompanies([]);
     setErrorMsg('');
+    setSearchHint('');
   };
 
   const isSearching = step === 'discovering';
@@ -311,6 +384,7 @@ export default function Discover() {
                           setComplexName(s);
                           setShowSuggestions(false);
                           setComplexError('');
+                          setSearchHint(`Will search: "corporate offices in ${s}"`);
                         }}
                       >
                         <Building className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -337,8 +411,14 @@ export default function Discover() {
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Google Maps will return all corporate tenants inside this complex.
+              Search any business park, IT park, or commercial district worldwide. Google Maps will return corporate tenants inside it.
             </p>
+            {searchHint && (
+              <p className="text-xs text-muted-foreground/80 mt-1 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 flex-shrink-0" />
+                {searchHint}
+              </p>
+            )}
           </div>
         )}
 
