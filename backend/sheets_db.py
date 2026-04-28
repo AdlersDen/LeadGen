@@ -81,7 +81,7 @@ class SheetsDB:
             return False
 
     def _get_worksheet(self, title: str):
-        """Helper to get a worksheet gracefully and ensure headers exist."""
+        """Helper to get a worksheet gracefully and ensure headers exist. Creates missing worksheets."""
         if not self.connect():
             return None
         try:
@@ -89,8 +89,16 @@ class SheetsDB:
             self._ensure_headers(ws, title)
             return ws
         except gspread.exceptions.WorksheetNotFound:
-            logger.error(f"Worksheet '{title}' not found in Google Sheet.")
-            return None
+            logger.info(f"Worksheet '{title}' not found. Creating it...")
+            try:
+                # Create with 1 row and enough columns for headers
+                headers = SHEET_HEADERS.get(title, ["ID"])
+                ws = self.doc.add_worksheet(title=title, rows="100", cols=str(max(20, len(headers))))
+                self._ensure_headers(ws, title)
+                return ws
+            except Exception as e:
+                logger.error(f"Failed to create worksheet '{title}': {e}")
+                return None
 
     def _ensure_headers(self, ws, title: str):
         """Initializes missing headers while preserving any existing column order."""
