@@ -1,6 +1,9 @@
 """
 Module 5 — Email Outreach Engine
-Sends personalized emails via SendGrid SMTP with:
+Sends personalized emails via SendGrid API with:
+  - From: marketing@adlersden.com (verified domain: adlersden.com)
+  - Open + click tracking enabled (PRD §6.6)
+  - Daily send limit for warm-up compliance (PRD §6.5)
   - Mandatory unsubscribe footer (PRD §6.5)
   - Bounce/delivery error handling
 PRD §6.5
@@ -8,15 +11,42 @@ PRD §6.5
 
 import logging
 import os
+from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
-FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL", "outreach@yourdomain.com")
-FROM_NAME = os.getenv("SENDGRID_FROM_NAME", "Adler's Den")
-UNSUBSCRIBE_URL = os.getenv("UNSUBSCRIBE_URL", "https://yourdomain.com/unsubscribe")
+SENDGRID_API_KEY   = os.getenv("SENDGRID_API_KEY")
+FROM_EMAIL         = os.getenv("SENDGRID_FROM_EMAIL", "marketing@adlersden.com")
+FROM_NAME          = os.getenv("SENDGRID_FROM_NAME", "Adler's Den")
+UNSUBSCRIBE_URL    = os.getenv("UNSUBSCRIBE_URL", "https://adlers-den-leadgen.vercel.app/unsubscribe")
+DAILY_SEND_LIMIT   = int(os.getenv("DAILY_SEND_LIMIT", "50"))
+
+# ─── In-memory daily send counter ────────────────────────────────────────────
+# Resets automatically when the date changes (process restart on Render also resets it).
+_send_counter: dict[str, int] = {}   # { "YYYY-MM-DD": count }
+
+
+def _check_daily_limit() -> bool:
+    """
+    Returns True if we are still within today's send quota.
+    PRD §6.5 — warm-up: 50/day for first week, then scale to 300/day max.
+    """
+    today = str(date.today())
+    count = _send_counter.get(today, 0)
+    if count >= DAILY_SEND_LIMIT:
+        logger.warning(
+            f"Daily send limit reached ({count}/{DAILY_SEND_LIMIT}). "
+            "Email not sent. Increase DAILY_SEND_LIMIT after warm-up."
+        )
+        return False
+    return True
+
+
+def _increment_counter():
+    today = str(date.today())
+    _send_counter[today] = _send_counter.get(today, 0) + 1
 
 
 def _build_html_body(text_body: str, unsubscribe_url: str, recipient_email: str) -> str:
@@ -24,7 +54,6 @@ def _build_html_body(text_body: str, unsubscribe_url: str, recipient_email: str)
     Wraps the plain text pitch in a clean, professional HTML email.
     Includes mandatory unsubscribe footer (PRD §6.5).
     """
-    # Convert plain newlines to HTML line breaks
     html_paragraphs = "".join(
         f"<p style='margin:0 0 12px 0;'>{line}</p>" if line.strip() else "<br/>"
         for line in text_body.split("\n")
@@ -50,7 +79,7 @@ def _build_html_body(text_body: str, unsubscribe_url: str, recipient_email: str)
                 Adler's Den
               </p>
               <p style="margin:4px 0 0 0;color:#a0aec0;font-size:12px;">
-                Premium Corporate Gifting & Employee Engagement
+                Premium Corporate Gifting &amp; Employee Engagement
               </p>
             </td>
           </tr>
@@ -98,12 +127,18 @@ def send_email(
     Main entry point for Module 5.
     Sends one email via SendGrid and returns a status dict.
 
+    Enforces daily send limit (PRD §6.5 warm-up compliance).
+    Enables open + click tracking (PRD §6.6 analytics).
+
     Returns: {"success": bool, "message_id": str | None, "error": str | None}
     """
-    # --- TESTING MODE BYPASS ---
-    # logger.info(f"[TEST MODE] Simulating email send to {to_email}")
-    # return {"success": True, "message_id": "mock_id_for_testing", "error": None}
-    # ---------------------------
+    # --- Daily limit check (PRD §6.5 — warm-up: 50/day) ---
+    if not _check_daily_limit():
+        return {
+            "success": False,
+            "message_id": None,
+            "error": f"Daily send limit of {DAILY_SEND_LIMIT} reached. Try again tomorrow or increase DAILY_SEND_LIMIT.",
+        }
 
     if not SENDGRID_API_KEY:
         logger.error("SENDGRID_API_KEY is not set. Email not sent.")
@@ -111,7 +146,10 @@ def send_email(
 
     try:
         from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import Mail, Email, To, Content, HtmlContent
+        from sendgrid.helpers.mail import (
+            Mail, Email, To, Content, HtmlContent,
+            TrackingSettings, ClickTracking, OpenTracking,
+        )
 
         html_body = _build_html_body(body, UNSUBSCRIBE_URL, to_email)
 
@@ -123,7 +161,11 @@ def send_email(
         message.add_content(Content("text/plain", body))
         message.add_content(HtmlContent(html_body))
 
-
+        # --- PRD §6.6 — Enable open + click tracking for analytics ---
+        tracking = TrackingSettings()
+        tracking.click_tracking = ClickTracking(enable=True, enable_text=False)
+        tracking.open_tracking = OpenTracking(enable=True)
+        message.tracking_settings = tracking
 
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         response = sg.send(message)
@@ -131,6 +173,7 @@ def send_email(
         if response.status_code in (200, 202):
             message_id = response.headers.get("X-Message-Id", "")
             logger.info(f"Email sent to {to_email}. SendGrid message_id: {message_id}")
+            _increment_counter()
             return {"success": True, "message_id": message_id, "error": None}
         else:
             error_msg = f"Unexpected SendGrid status: {response.status_code}"

@@ -89,7 +89,7 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
 
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-2.5-flash-lite",  # PRD §6.4 — was incorrectly gemini-1.5-flash
             generation_config={
                 "response_mime_type": "application/json",
                 "temperature": 0.7,

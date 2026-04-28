@@ -109,15 +109,15 @@ def _is_b2b_company(place: dict) -> bool:
     return False
 
 
-def _extract_domain(place: dict) -> str:
+def _extract_domain(place: dict) -> tuple[str, str]:
     """
-    Extract domain from Place Details if available.
+    Extract domain and phone from Place Details if available.
     Requires an extra Places Detail API call per place.
-    Only called if we decide to enrich a record.
+    Always returns a (domain, phone) tuple — never a bare string.
     """
     place_id = place.get("place_id")
     if not place_id:
-        return ""
+        return "", ""  # ← was returning bare "" causing ValueError on unpack
     url = "https://maps.googleapis.com/maps/api/place/details/json"
     params = {
         "place_id": place_id,

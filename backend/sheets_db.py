@@ -82,9 +82,11 @@ class SheetsDB:
             elif title == "Contacts":
                 headers = ["ID", "Company ID", "Full Name", "Role", "Email", "Confidence Score", "Status", "Company Name", "Created Date"]
             elif title == "Outreach Logs":
-                headers = ["ID", "Campaign ID", "Contact ID", "Contact Email", "Contact Name", "Company Name", "Subject", "Body", "Status", "Timestamp"]
+                headers = ["ID", "Campaign ID", "Contact ID", "Contact Email", "Contact Name", "Company Name", "Subject", "Body", "Status", "Message ID", "Timestamp"]
             elif title == "Runs":
                 headers = ["ID", "Pincode", "Location Name", "Companies Found", "Contacts Found", "Emails Sent", "Status", "Timestamp"]
+            elif title == "Blocklist":
+                headers = ["Email", "Timestamp"]
 
             if headers:
                 ws.append_row(headers)
@@ -112,16 +114,17 @@ class SheetsDB:
         date_added = datetime.now(timezone.utc).isoformat()
 
         row = [
-            record_id,
-            company_data.get("name", ""),
-            company_data.get("industry", ""),
-            company_data.get("address", ""),
-            company_data.get("domain", ""),
-            company_data.get("pincode", ""),
-            company_data.get("employee_count", ""),
-            company_data.get("tier", ""),
-            company_data.get("status", "discovered"),
-            date_added
+            record_id,                                        # ID
+            company_data.get("name", ""),                    # Name
+            company_data.get("industry", ""),                # Industry
+            company_data.get("address", ""),                 # Address
+            company_data.get("domain", ""),                  # Domain
+            company_data.get("pincode", ""),                 # Pincode
+            company_data.get("employee_count", ""),          # Employee Count
+            company_data.get("tier", ""),                    # Tier
+            company_data.get("contacts_extracted", ""),      # Contacts Extracted ← was missing
+            company_data.get("status", "discovered"),        # Status
+            date_added                                        # Created Date
         ]
         ws.append_row(row)
 
@@ -166,16 +169,17 @@ class SheetsDB:
         for company_data in new_companies:
             record_id = str(uuid.uuid4())
             row = [
-                record_id,
-                company_data.get("name", ""),
-                company_data.get("industry", ""),
-                company_data.get("address", ""),
-                company_data.get("domain", ""),
-                company_data.get("pincode", ""),
-                company_data.get("employee_count", ""),
-                company_data.get("tier", ""),
-                company_data.get("status", "discovered"),
-                date_added
+                record_id,                                       # ID
+                company_data.get("name", ""),                   # Name
+                company_data.get("industry", ""),               # Industry
+                company_data.get("address", ""),                # Address
+                company_data.get("domain", ""),                 # Domain
+                company_data.get("pincode", ""),                # Pincode
+                company_data.get("employee_count", ""),         # Employee Count
+                company_data.get("tier", ""),                   # Tier
+                company_data.get("contacts_extracted", ""),     # Contacts Extracted ← was missing
+                company_data.get("status", "discovered"),       # Status
+                date_added                                       # Created Date
             ]
             rows.append(row)
             company_data["id"] = record_id
@@ -295,10 +299,45 @@ class SheetsDB:
             log_data.get("subject", ""),
             log_data.get("body", ""),
             log_data.get("status", "sent"),
+            log_data.get("message_id", ""),   # SendGrid X-Message-Id for webhook matching
             timestamp
         ]
         ws.append_row(row)
         return record_id
+
+    def update_outreach_status(self, message_id: str, status: str):
+        """
+        Called by the SendGrid webhook to update delivery/open/bounce status.
+        Finds the row in Outreach Logs whose Message ID matches and updates Status.
+        """
+        ws = self._get_worksheet("Outreach Logs")
+        if not ws or not message_id:
+            return
+
+        all_values = ws.get_all_values()
+        if not all_values:
+            return
+
+        headers = all_values[0]
+        if "Message ID" not in headers or "Status" not in headers:
+            logger.warning("update_outreach_status: required columns not found in Outreach Logs.")
+            return
+
+        msg_col_idx    = headers.index("Message ID") + 1   # 1-based for gspread
+        status_col_idx = headers.index("Status") + 1
+
+        import string
+        status_col_letter = string.ascii_uppercase[status_col_idx - 1]
+
+        for row_idx, row in enumerate(all_values):
+            if row_idx == 0:
+                continue  # skip header
+            if len(row) >= msg_col_idx and row[msg_col_idx - 1] == message_id:
+                ws.update_cell(row_idx + 1, status_col_idx, status)
+                logger.info(f"Updated outreach log row {row_idx + 1} status → {status} (msg_id={message_id})")
+                return
+
+        logger.warning(f"update_outreach_status: no row found for message_id={message_id}")
 
     def is_contact_recently_emailed(self, email: str, days=90) -> bool:
         """PRD Duplicate Prevention: 90-day cooldown."""
@@ -354,6 +393,24 @@ class SheetsDB:
         run_data["id"] = record_id
         run_data["created_date"] = timestamp
         return run_data
+
+    # --- Blocklist Tab (PRD §Phase3 — Unsubscribe compliance) ---
+    def add_to_blocklist(self, email: str):
+        """Adds an email to the Blocklist tab to prevent future outreach."""
+        ws = self._get_worksheet("Blocklist")
+        if not ws:
+            return
+        timestamp = datetime.now(timezone.utc).isoformat()
+        ws.append_row([email.strip().lower(), timestamp])
+        logger.info(f"Blocklisted: {email}")
+
+    def is_blocklisted(self, email: str) -> bool:
+        """Returns True if the email is on the unsubscribe blocklist."""
+        ws = self._get_worksheet("Blocklist")
+        if not ws:
+            return False
+        emails = {v.strip().lower() for v in ws.col_values(1) if v.strip()}
+        return email.strip().lower() in emails
 
 
 # Singleton instance for the app to use

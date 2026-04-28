@@ -31,6 +31,7 @@ from discovery import discover_companies
 from contacts import find_contacts
 from pitches import generate_pitch
 from outreach import send_email
+from webhooks import router as webhook_router
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +68,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers
+app.include_router(webhook_router)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Request / Response Models
@@ -99,6 +103,9 @@ class SendEmailRequest(BaseModel):
     subject: str
     body: str
 
+class UnsubscribeRequest(BaseModel):
+    email: str
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Health Check
@@ -108,6 +115,27 @@ class SendEmailRequest(BaseModel):
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "message": "Adler's Den backend is running!"}
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Unsubscribe (PRD §6.5 Compliance)
+# ───────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/unsubscribe")
+async def unsubscribe(req: UnsubscribeRequest):
+    """
+    Adds the email to the Blocklist tab in Google Sheets.
+    Called by the /unsubscribe frontend page when user confirms opt-out.
+    """
+    email = req.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="A valid email address is required.")
+    try:
+        db.add_to_blocklist(email)
+        return {"success": True, "message": f"{email} has been unsubscribed."}
+    except Exception as e:
+        logger.error(f"/api/unsubscribe failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -432,9 +460,16 @@ async def generate_pitch_for_contact(req: GeneratePitchRequest):
 async def send_outreach_email(req: SendEmailRequest):
     """
     Sends a personalized email via SendGrid.
-    Checks 90-day cooldown before dispatching.
+    Checks blocklist, then 90-day cooldown before dispatching.
     Logs the dispatch to the Outreach Logs sheet.
     """
+    # PRD §Phase3 — Blocklist check (unsubscribed contacts)
+    if db.is_blocklisted(req.contact_email):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{req.contact_email} has unsubscribed and cannot be contacted."
+        )
+
     # PRD §6.6 — 90-day duplicate prevention
     if db.is_contact_recently_emailed(req.contact_email):
         raise HTTPException(
@@ -450,12 +485,13 @@ async def send_outreach_email(req: SendEmailRequest):
     )
 
     if not result["success"]:
+        status_code = 429 if "Daily send limit" in (result.get("error") or "") else 502
         raise HTTPException(
-            status_code=502,
+            status_code=status_code,
             detail=f"Email send failed: {result.get('error', 'Unknown error')}"
         )
 
-    # Log successful dispatch
+    # Log successful dispatch (include message_id for webhook matching)
     campaign_id = f"campaign_{req.contact_id[:8]}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
     db.add_outreach_log({
         "campaign_id": campaign_id,
@@ -466,6 +502,7 @@ async def send_outreach_email(req: SendEmailRequest):
         "subject": req.subject,
         "body": req.body,
         "status": "sent",
+        "message_id": result.get("message_id", ""),
     })
 
     return {

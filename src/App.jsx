@@ -11,6 +11,7 @@ import Companies from '@/pages/Companies';
 import Contacts from '@/pages/Contacts';
 import Outreach from '@/pages/Outreach';
 import Runs from '@/pages/Runs';
+import Unsubscribe from '@/pages/Unsubscribe';
 
 function App() {
   return (
@@ -26,6 +27,8 @@ function App() {
               <Route path="/outreach" element={<Outreach />} />
               <Route path="/runs" element={<Runs />} />
             </Route>
+            {/* Standalone page — no AppLayout nav */}
+            <Route path="/unsubscribe" element={<Unsubscribe />} />
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Router>
