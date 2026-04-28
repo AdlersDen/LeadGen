@@ -77,7 +77,11 @@ app.include_router(webhook_router)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class DiscoverRequest(BaseModel):
-    pincode: str
+    pincode:      str | None       = None
+    complex_name: str | None       = None
+    radius_km:    int              = 2
+    industries:   list[str]        = []
+    tiers:        list[str]        = ["A", "B"]
 
 class FindContactsRequest(BaseModel):
     company_id: str
@@ -241,39 +245,63 @@ async def dashboard_stats():
 @app.post("/api/discover")
 async def discover(req: DiscoverRequest):
     """
-    Discovers B2B companies for a given pincode via Google Maps,
-    saves results to the Companies + Runs sheets, and returns them.
+    Discovers B2B companies via Google Maps.
+    Supports two modes:
+      - Pincode mode:  geocode pincode → nearby_search in radius_km
+      - Complex mode:  text search for corporate offices in the named complex
+    Optional filters: industries (multi-select), tiers (A/B/C).
     """
-    pincode = req.pincode.strip()
-    if not pincode or not pincode.isdigit() or len(pincode) != 6:
-        raise HTTPException(status_code=422, detail="A valid 6-digit Indian pincode is required.")
+    if not req.pincode and not req.complex_name:
+        raise HTTPException(status_code=422, detail="Provide either a pincode or a business complex name.")
 
     try:
-        result = discover_companies(pincode)
+        if req.complex_name:
+            # Complex / area mode — pass to discovery module
+            result = discover_companies(
+                pincode=None,
+                complex_name=req.complex_name.strip(),
+                industries=req.industries,
+                tiers=req.tiers,
+            )
+        else:
+            # Pincode mode — validate then discover
+            code = req.pincode.strip()
+            if not code or not code.isdigit() or len(code) != 6:
+                raise HTTPException(status_code=422, detail="A valid 6-digit Indian pincode is required.")
+            result = discover_companies(
+                pincode=code,
+                radius_km=req.radius_km,
+                industries=req.industries,
+                tiers=req.tiers,
+            )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Discovery error for {pincode}: {e}")
+        label = req.complex_name or req.pincode
+        logger.error(f"Discovery error for {label}: {e}")
         raise HTTPException(status_code=502, detail=f"Company discovery failed: {e}")
 
-    companies = result.get("companies", [])
-    location_name = result.get("location_name", pincode)
-    
+    companies     = result.get("companies", [])
+    location_name = result.get("location_name", req.complex_name or req.pincode)
+
     saved_companies = db.add_companies_bulk(companies) if companies else []
 
-    # Log the run (record total discovered, not just newly saved)
+    # Log the run
     db.add_run({
-        "pincode": pincode,
-        "location_name": location_name,
+        "pincode":        req.pincode or "",
+        "location_name":  location_name,
         "companies_found": len(companies),
         "contacts_found": 0,
-        "emails_sent": 0,
-        "status": "completed",
+        "emails_sent":    0,
+        "status":         "completed",
     })
 
     return {
-        "pincode": pincode,
-        "location_name": location_name,
+        "pincode":         req.pincode,
+        "complex_name":    req.complex_name,
+        "location_name":   location_name,
         "companies_found": len(companies),
-        "companies": companies,
+        "companies":       companies,
     }
 
 

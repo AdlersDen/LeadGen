@@ -1,7 +1,10 @@
 """
 Module 1 — Company Discovery Engine
-Converts a pincode to a list of filtered B2B corporate businesses
+Converts a pincode OR business complex name to a list of filtered B2B corporate businesses
 using the Google Geocoding API and Google Maps Places API.
+Supports two modes:
+  - Pincode mode:  geocode pincode -> nearby_search within radius_km
+  - Complex mode:  text search for corporate offices in named complex
 PRD §6.1
 """
 
@@ -45,8 +48,22 @@ NEUTRAL_ALLOWED_KEYWORDS = ["pvt", "ltd", "llp", "inc", "corp", "limited", "tech
                               "solutions", "services", "consulting", "software", "systems",
                               "enterprises", "industries", "group", "associates", "partners"]
 
+# Industry value key -> search terms for complex text search
+INDUSTRY_KEYWORDS = {
+    "tech":          "IT software technology",
+    "events":        "event management",
+    "realestate":    "real estate",
+    "finance":       "finance banking",
+    "consulting":    "consulting",
+    "manufacturing": "manufacturing",
+    "marketing":     "marketing media",
+    "pharma":        "pharmaceutical health",
+    "logistics":     "logistics courier",
+    "education":     "education training",
+}
 
-def _pincode_to_coords(pincode: str) -> tuple[float, float] | None:
+
+def _pincode_to_coords(pincode: str) -> tuple:
     """Convert Indian pincode to lat/lng via Google Geocoding API."""
     url = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {
@@ -66,7 +83,7 @@ def _pincode_to_coords(pincode: str) -> tuple[float, float] | None:
     return None, None, pincode
 
 
-def _fetch_places(lat: float, lng: float, radius_m: int = 3000, page_token: str = None) -> dict:
+def _fetch_places(lat: float, lng: float, radius_m: int = 2000, page_token: str = None) -> dict:
     """Query Google Maps Places API (Nearby Search)."""
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
     params = {
@@ -84,6 +101,22 @@ def _fetch_places(lat: float, lng: float, radius_m: int = 3000, page_token: str 
     except Exception as e:
         logger.error(f"Places API fetch failed: {e}")
         return {}
+
+
+def _fetch_text_search(query: str) -> list:
+    """
+    Google Maps Text Search — used for complex / area mode.
+    Returns raw place results matching the query string.
+    """
+    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+    params = {"query": query, "key": MAPS_API_KEY}
+    try:
+        resp = requests.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        return resp.json().get("results", [])
+    except Exception as e:
+        logger.error(f"Text search failed for '{query}': {e}")
+        return []
 
 
 def _is_b2b_company(place: dict) -> bool:
@@ -109,7 +142,7 @@ def _is_b2b_company(place: dict) -> bool:
     return False
 
 
-def _extract_domain(place: dict) -> tuple[str, str]:
+def _extract_domain(place: dict) -> tuple:
     """
     Extract domain and phone from Place Details if available.
     Requires an extra Places Detail API call per place.
@@ -117,7 +150,7 @@ def _extract_domain(place: dict) -> tuple[str, str]:
     """
     place_id = place.get("place_id")
     if not place_id:
-        return "", ""  # ← was returning bare "" causing ValueError on unpack
+        return "", ""  # was returning bare "" causing ValueError on unpack
     url = "https://maps.googleapis.com/maps/api/place/details/json"
     params = {
         "place_id": place_id,
@@ -138,7 +171,7 @@ def _extract_domain(place: dict) -> tuple[str, str]:
         return "", ""
 
 
-def _score_tier(rating: float | None, domain: str) -> str:
+def _score_tier(rating, domain: str) -> str:
     """
     Assigns a lead tier based on Google rating and domain availability.
     Tier A: high-value leads (rating >= 4.0 AND has a domain)
@@ -155,65 +188,102 @@ def _score_tier(rating: float | None, domain: str) -> str:
     return "C"
 
 
-def discover_companies(pincode: str) -> dict:
+def discover_companies(
+    pincode: str = None,
+    complex_name: str = None,
+    radius_km: int = 2,
+    industries: list = None,
+    tiers: list = None,
+) -> dict:
     """
-    Main entry point for Module 1.
-    Returns a dict with location_name and a list of filtered companies.
-    Fetches up to 3 pages (60 raw results) before applying the B2B filter.
+    Main entry point for Module 1. Supports two modes:
+      - Pincode mode:  geocode pincode -> nearby_search within radius_km
+      - Complex mode:  text search for corporate offices in named complex
+
+    Filters:
+      - industries: list of value keys (empty = all industries)
+      - tiers:      list of A/B/C (default: A and B)
     """
     import time
 
+    if industries is None:
+        industries = []
+    if tiers is None:
+        tiers = ["A", "B"]
+
     if not MAPS_API_KEY:
         logger.error("GOOGLE_MAPS_API_KEY is not set.")
-        return {"location_name": pincode, "companies": []}
+        return {"location_name": complex_name or pincode, "companies": []}
 
-    lat, lng, location_name = _pincode_to_coords(pincode)
-    if not lat:
-        return {"location_name": pincode, "companies": [], "error": "Could not geocode pincode."}
+    # ── Complex / Area mode ───────────────────────────────────────────────────
+    if complex_name:
+        location_name = complex_name
+        if industries:
+            industry_terms = " ".join(
+                INDUSTRY_KEYWORDS.get(ind, ind) for ind in industries
+            )
+            query = f"{industry_terms} companies in {complex_name}"
+        else:
+            query = f"corporate offices companies in {complex_name}"
 
-    logger.info(f"Discovering companies near {location_name} ({lat}, {lng})")
+        logger.info(f"Text search: {query}")
+        all_places = _fetch_text_search(query)
+        b2b_places = [p for p in all_places if _is_b2b_company(p)]
+        logger.info(
+            f"Text search: {len(all_places)} raw, {len(b2b_places)} B2B-filtered for '{complex_name}'"
+        )
 
-    # --- Paginated fetch: up to 3 pages = up to 60 raw results ---
-    all_places = []
-    data = _fetch_places(lat, lng)
-    all_places.extend(data.get("results", []))
+    # ── Pincode mode ──────────────────────────────────────────────────────────
+    else:
+        lat, lng, location_name = _pincode_to_coords(pincode)
+        if not lat:
+            return {"location_name": pincode, "companies": [], "error": "Could not geocode pincode."}
 
-    for _ in range(2):  # fetch up to 2 more pages (3 total)
-        next_token = data.get("next_page_token")
-        if not next_token:
-            break
-        # Google requires a 2s delay before next_page_token becomes valid
-        time.sleep(2)
-        data = _fetch_places(lat, lng, page_token=next_token)
+        radius_m = radius_km * 1000
+        logger.info(f"Discovering near {location_name} ({lat},{lng}), radius={radius_km}km")
+
+        all_places = []
+        data = _fetch_places(lat, lng, radius_m=radius_m)
         all_places.extend(data.get("results", []))
 
-    # --- B2B filter ---
-    b2b_places = [p for p in all_places if _is_b2b_company(p)]
-    logger.info(
-        f"Fetched {len(all_places)} total places, "
-        f"{len(b2b_places)} passed B2B filter for {pincode}"
-    )
+        for _ in range(2):
+            next_token = data.get("next_page_token")
+            if not next_token:
+                break
+            time.sleep(2)
+            data = _fetch_places(lat, lng, radius_m=radius_m, page_token=next_token)
+            all_places.extend(data.get("results", []))
 
-    # --- Enrich each place with domain, phone, and tier ---
+        b2b_places = [p for p in all_places if _is_b2b_company(p)]
+        logger.info(
+            f"Fetched {len(all_places)} total, {len(b2b_places)} B2B-filtered for {pincode}"
+        )
+
+    # ── Enrich + apply tier filter ────────────────────────────────────────────
     companies = []
     for place in b2b_places:
         domain, phone = _extract_domain(place)
         rating = place.get("rating")
-        tier = _score_tier(rating, domain)
+        tier   = _score_tier(rating, domain)
+
+        # Apply tier filter — skip if not in selected tiers
+        if tiers and tier not in tiers:
+            continue
+
         companies.append({
-            "name": place.get("name", ""),
-            "address": place.get("vicinity", ""),
-            "pincode": pincode,
-            "industry": ", ".join(place.get("types", []))[:100],
+            "name":          place.get("name", ""),
+            "address":       place.get("vicinity", "") or place.get("formatted_address", ""),
+            "pincode":       pincode or "",
+            "industry":      ", ".join(place.get("types", []))[:100],
             "google_rating": rating,
-            "domain": domain,
-            "phone": phone,
-            "tier": tier,
-            "status": "discovered",
-            "source": "Google Maps",
+            "domain":        domain,
+            "phone":         phone,
+            "tier":          tier,
+            "status":        "discovered",
+            "source":        "Google Maps",
         })
 
     return {
         "location_name": location_name,
-        "companies": companies,
+        "companies":     companies,
     }
