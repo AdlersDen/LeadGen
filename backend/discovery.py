@@ -21,7 +21,7 @@ MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 # PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
 ALLOWED_TYPES = {
     "corporate_office", "office", "accounting", "insurance_agency",
-    "finance", "lawyer", "real_estate_agency", "travel_agency",
+    "finance", "lawyer", "real_estate_agency",
     "moving_company", "storage", "courier", "freight_forwarder",
     "warehouse", "manufacturing", "general_contractor", "staffing_agency",
     "consultant", "software_company", "advertising_agency", "marketing",
@@ -42,7 +42,7 @@ BLOCKLIST_TYPES = {
     "post_office", "local_government_office", "ambulance_station",
     "fire_station", "police", "night_club", "amusement_park", "casino",
     "bowling_alley", "movie_theater", "stadium", "zoo", "aquarium",
-    "laundry", "funeral_home", "cemetery"
+    "laundry", "funeral_home", "cemetery", "home_goods_store", "store"
 }
 
 # Neutral types that are acceptable (IT parks, business parks, etc.)
@@ -219,9 +219,19 @@ JUNK_NAME_PATTERNS = [
 ]
 
 
-def _is_junk_listing(name: str) -> bool:
+def _is_junk_listing(name: str, complex_name: str = "") -> bool:
     name_lower = name.lower()
-    return any(pattern in name_lower for pattern in JUNK_NAME_PATTERNS)
+    # Pattern-based junk check
+    if any(pattern in name_lower for pattern in JUNK_NAME_PATTERNS):
+        return True
+    # If the place name IS the complex itself (80%+ hint words match), skip it
+    if complex_name:
+        hint_words = _extract_complex_hint(complex_name)
+        if hint_words:
+            matches = sum(1 for w in hint_words if w in name_lower)
+            if matches / len(hint_words) >= 0.80:
+                return True
+    return False
 
 
 def _is_b2b_company(place: dict) -> bool:
@@ -456,7 +466,7 @@ def discover_companies(
         all_places = address_verified
         b2b_places = [
             p for p in all_places
-            if not _is_junk_listing(p.get("name", "")) and _is_b2b_company(p)
+            if not _is_junk_listing(p.get("name", ""), complex_name) and _is_b2b_company(p)
         ]
         logger.info(
             f"B2B filter: {len(all_places)} inside boundary, {len(b2b_places)} corporate for '{complex_name}'"
