@@ -44,6 +44,7 @@ ADJACENT_COMPLEX_CONFLICTS = {
     "urmi": ["peninsula business park", "marathon futurex"],
     "manyata": ["loma it park", "aurum"],
     "reliance corporate": ["aurum q parc", "loma it park"],
+    "am naik": ["atl corporate", "saki vihar", "emerald isle"],
 }
 
 # Known IT/business parks for cross-park contamination detection
@@ -69,6 +70,8 @@ LARGE_CAMPUS_OVERRIDES = {
     "ashar it park": 250,
     "centrum business": 250,
     "opal square": 200,
+    "am naik tower": 150,
+    "l&t am naik": 150,
 }
 
 # Dense industrial/IT corridors where address strictness must be absolute
@@ -87,6 +90,44 @@ PROXIMITY_PREPOSITIONS = [
 SINGLE_TENANT_PATTERNS = [
     "tcs ", "tcs campus", "infosys campus", "wipro campus",
     "hcl campus", "accenture campus", "cognizant campus"
+]
+
+# Government / gated SEZ overrides with hardcoded coords (find_place often fails for these)
+GOVERNMENT_SEZ_OVERRIDES = {
+    "seepz": {
+        "lat": 19.1197, "lng": 72.8680, "radius": 800,
+        "aliases": ["seepz", "andheri east", "sez", "santacruz electronics"]
+    },
+    "millennium business park": {
+        "lat": 19.1147, "lng": 72.9010, "radius": 400,
+        "aliases": ["millennium business", "mahape", "millennium park"]
+    },
+    "jio world centre": {
+        "lat": 19.0664, "lng": 72.8652, "radius": 300,
+        "aliases": ["jio world", "bkc", "bandra kurla", "jio world centre"]
+    },
+}
+
+# Known aliases for complexes whose Google Maps addresses use different words
+COMPLEX_ADDRESS_ALIASES = {
+    "seepz": ["seepz", "andheri east", "sez", "santacruz electronics", "midc andheri"],
+    "millennium business": ["millennium business", "mahape", "millennium park"],
+    "jio world": ["jio world", "bkc", "bandra kurla"],
+    "nesco": ["nesco", "nesco it", "western express", "goregaon"],
+    "nirlon": ["nirlon", "nirlon knowledge", "western express", "goregaon"],
+    "bandra kurla": ["bkc", "bandra kurla", "kurla"],
+    "one bkc": ["bkc", "bandra kurla", "one bkc"],
+    "gigaplex": ["gigaplex", "airoli", "thane belapur"],
+    "manyata": ["manyata", "nagavara", "hebbal"],
+    "hinjewadi": ["hinjewadi", "rajiv gandhi", "phase"],
+    "magarpatta": ["magarpatta", "hadapsar", "cybercity"],
+}
+
+# Mixed-use venues that respond poorly to nearby keyword searches — use text search instead
+MIXED_USE_VENUES = [
+    "jio world centre", "worli", "lower parel",
+    "phoenix mills", "one world centre", "peninsula business park",
+    "trade centre", "wockhardt towers", "express towers"
 ]
 
 # PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
@@ -314,20 +355,37 @@ def _extract_complex_hint(complex_name: str) -> list:
     return [w for w in words if w not in CITY_WORDS and len(w) > 2]
 
 
+def _get_accepted_aliases(complex_name: str) -> list:
+    """
+    Returns the accepted alias word list for this complex.
+    Falls back to _extract_complex_hint() if no alias entry found.
+    """
+    cn_lower = complex_name.lower()
+    for key, aliases in COMPLEX_ADDRESS_ALIASES.items():
+        if key in cn_lower:
+            return aliases
+    return _extract_complex_hint(complex_name)
+
+
 def _is_dense_corridor(complex_name: str) -> bool:
     """Returns True if the complex is inside a known dense industrial/IT corridor."""
     cn_lower = complex_name.lower()
     return any(kw in cn_lower for kw in DENSE_IT_CORRIDORS)
 
 
+def _is_mixed_use_venue(complex_name: str) -> bool:
+    """Returns True if the complex is a mixed-use venue that needs text search."""
+    cn_lower = complex_name.lower()
+    return any(kw in cn_lower for kw in MIXED_USE_VENUES)
+
+
 def _address_matches_complex(place: dict, complex_name: str) -> bool:
     """
     Returns True if the place's address or name contains at least one
-    key word from the complex name. Drops results that are just
-    nearby but not actually inside the searched complex.
-    In dense corridors, zero matches = automatic rejection (no proximity fallback).
+    accepted alias or hint word from the complex name.
+    In dense corridors, zero matches = automatic rejection.
     """
-    hint_words = _extract_complex_hint(complex_name)
+    hint_words = _get_accepted_aliases(complex_name)
     if not hint_words:
         return True  # can't verify, allow through
     address = (
@@ -564,112 +622,143 @@ def discover_companies(
                 logger.warning(f"Single-tenant fast path failed for '{complex_name}': {e}")
                 # Fall through to full pipeline
 
-        # Step 1: Resolve the complex to exact coordinates + viewport (3-strategy fallback)
-        fp_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+        # Step 1: Resolve the complex to exact coordinates + viewport
+        # First check GOVERNMENT_SEZ_OVERRIDES for hardcoded coords
+        sez_override = None
+        for sez_key, sez_data in GOVERNMENT_SEZ_OVERRIDES.items():
+            if sez_key in complex_name.lower():
+                sez_override = sez_data
+                logger.info(f"SEZ override matched for '{complex_name}': using hardcoded coords ({sez_data['lat']}, {sez_data['lng']})")
+                break
 
-        def _find_place(query: str):
-            """Call find_place and return candidates list."""
-            try:
-                resp = requests.get(fp_url, params={
-                    "input": query, "inputtype": "textquery",
-                    "fields": "geometry,name", "key": MAPS_API_KEY,
-                }, timeout=10)
-                resp.raise_for_status()
-                return resp.json().get("candidates", [])
-            except Exception as e:
-                logger.error(f"find_place HTTP error for '{query}': {e}")
-                return []
+        if sez_override:
+            cx_lat = sez_override["lat"]
+            cx_lng = sez_override["lng"]
+            radius_m = float(sez_override["radius"])
+            logger.info(f"Complex '{complex_name}' → SEZ override ({cx_lat}, {cx_lng}), radius={radius_m:.0f} m")
+        else:
+            # Step 1: Resolve the complex to exact coordinates + viewport (3-strategy fallback)
+            fp_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
 
-        # Strategy 1: exact name
-        candidates = _find_place(complex_name)
+            def _find_place(query: str):
+                """Call find_place and return candidates list."""
+                try:
+                    resp = requests.get(fp_url, params={
+                        "input": query, "inputtype": "textquery",
+                        "fields": "geometry,name", "key": MAPS_API_KEY,
+                    }, timeout=10)
+                    resp.raise_for_status()
+                    return resp.json().get("candidates", [])
+                except Exception as e:
+                    logger.error(f"find_place HTTP error for '{query}': {e}")
+                    return []
 
-        # Strategy 2: simplified name (swap locality → city)
-        if not candidates:
-            simplified = simplify_complex_name(complex_name)
-            if simplified != complex_name:
-                logger.info(f"find_place retry with simplified name: '{simplified}'")
-                candidates = _find_place(simplified)
+            # Strategy 1: exact name
+            candidates = _find_place(complex_name)
 
-        # Strategy 3: geocode fallback
-        if not candidates:
-            logger.info(f"find_place failed — falling back to geocode for '{complex_name}'")
-            try:
-                geo_url = "https://maps.googleapis.com/maps/api/geocode/json"
-                geo_resp = requests.get(geo_url, params={"address": complex_name, "key": MAPS_API_KEY}, timeout=10)
-                geo_resp.raise_for_status()
-                geo_results = geo_resp.json().get("results", [])
-                if geo_results:
-                    # Synthesise a candidate in find_place format
-                    candidates = [{"geometry": geo_results[0]["geometry"]}]
-                    logger.info(f"Geocode fallback found: {geo_results[0].get('formatted_address')}")
-            except Exception as e:
-                logger.error(f"Geocode fallback failed for '{complex_name}': {e}")
+            # Strategy 2: simplified name (swap locality → city)
+            if not candidates:
+                simplified = simplify_complex_name(complex_name)
+                if simplified != complex_name:
+                    logger.info(f"find_place retry with simplified name: '{simplified}'")
+                    candidates = _find_place(simplified)
 
-        if not candidates:
-            msg = f"Complex '{complex_name}' not found via find_place or geocode."
-            logger.error(msg)
-            return {"location_name": complex_name, "companies": [], "error": msg}
+            # Strategy 3: geocode fallback
+            if not candidates:
+                logger.info(f"find_place failed — falling back to geocode for '{complex_name}'")
+                try:
+                    geo_url = "https://maps.googleapis.com/maps/api/geocode/json"
+                    geo_resp = requests.get(geo_url, params={"address": complex_name, "key": MAPS_API_KEY}, timeout=10)
+                    geo_resp.raise_for_status()
+                    geo_results = geo_resp.json().get("results", [])
+                    if geo_results:
+                        candidates = [{"geometry": geo_results[0]["geometry"]}]
+                        logger.info(f"Geocode fallback found: {geo_results[0].get('formatted_address')}")
+                except Exception as e:
+                    logger.error(f"Geocode fallback failed for '{complex_name}': {e}")
 
-        geometry  = candidates[0].get("geometry", {})
-        location  = geometry.get("location", {})
-        viewport  = geometry.get("viewport", {})
-        cx_lat    = location.get("lat")
-        cx_lng    = location.get("lng")
+            if not candidates:
+                msg = f"Complex '{complex_name}' not found via find_place or geocode."
+                logger.error(msg)
+                return {"location_name": complex_name, "companies": [], "error": msg}
 
-        if not cx_lat or not cx_lng:
-            logger.error(f"find_place returned geometry without location for '{complex_name}'")
-            return {"location_name": complex_name, "companies": [], "error": "Could not resolve complex coordinates."}
+            geometry  = candidates[0].get("geometry", {})
+            location  = geometry.get("location", {})
+            viewport  = geometry.get("viewport", {})
+            cx_lat    = location.get("lat")
+            cx_lng    = location.get("lng")
 
-        # Step 2: Derive search radius from viewport (haversine half-diagonal, 200–1000 m)
-        radius_m = get_radius_from_viewport(viewport, complex_name)
-        logger.info(
-            f"Complex '{complex_name}' → ({cx_lat}, {cx_lng}), viewport radius={radius_m:.0f} m"
-        )
+            if not cx_lat or not cx_lng:
+                logger.error(f"find_place returned geometry without location for '{complex_name}'")
+                return {"location_name": complex_name, "companies": [], "error": "Could not resolve complex coordinates."}
 
-        # Step 3: Two separate nearby searches ('office' and 'corporate'), up to 3 pages each
+            # Step 2: Derive search radius from viewport
+            radius_m = get_radius_from_viewport(viewport, complex_name)
+            logger.info(
+                f"Complex '{complex_name}' → ({cx_lat}, {cx_lng}), viewport radius={radius_m:.0f} m"
+            )
+
+        # Step 3: Search for places — text search for mixed-use venues, nearby search otherwise
         import time as _time
-        nb_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
         all_raw_places_dict = {}
 
-        for keyword in ["office", "corporate"]:
-            nb_params = {
-                "location": f"{cx_lat},{cx_lng}",
-                "radius":   int(radius_m),
-                "keyword":  keyword,
-                "key":      MAPS_API_KEY,
-            }
-            try:
-                nb_resp = requests.get(nb_url, params=nb_params, timeout=15)
-                nb_resp.raise_for_status()
-                nb_data = nb_resp.json()
-                
-                # Page 1
-                for p in nb_data.get("results", []):
-                    all_raw_places_dict[p.get("place_id")] = p
-                
-                # Page 2
-                next_token = nb_data.get("next_page_token")
-                if next_token:
-                    _time.sleep(2)
-                    resp2 = requests.get(nb_url, params={"pagetoken": next_token, "key": MAPS_API_KEY}, timeout=15)
-                    resp2.raise_for_status()
-                    data2 = resp2.json()
-                    for p in data2.get("results", []):
+        if _is_mixed_use_venue(complex_name):
+            logger.info(f"Mixed-use venue detected for '{complex_name}' — using text search")
+            ts_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+            for ts_query in [
+                f"private limited office {complex_name}",
+                f"corporate office {complex_name}",
+                f"pvt ltd {complex_name}",
+            ]:
+                try:
+                    ts_resp = requests.get(ts_url, params={"query": ts_query, "key": MAPS_API_KEY}, timeout=15)
+                    ts_resp.raise_for_status()
+                    for p in ts_resp.json().get("results", []):
                         all_raw_places_dict[p.get("place_id")] = p
-                    
-                    # Page 3
-                    next_token2 = data2.get("next_page_token")
-                    if next_token2:
+                except Exception as e:
+                    logger.error(f"Text search failed for '{ts_query}': {e}")
+        else:
+            nb_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+
+            for keyword in ["office", "corporate"]:
+                nb_params = {
+                    "location": f"{cx_lat},{cx_lng}",
+                    "radius":   int(radius_m),
+                    "keyword":  keyword,
+                    "key":      MAPS_API_KEY,
+                }
+                try:
+                    nb_resp = requests.get(nb_url, params=nb_params, timeout=15)
+                    nb_resp.raise_for_status()
+                    nb_data = nb_resp.json()
+
+                    # Page 1
+                    for p in nb_data.get("results", []):
+                        all_raw_places_dict[p.get("place_id")] = p
+
+                    # Page 2
+                    next_token = nb_data.get("next_page_token")
+                    if next_token:
                         _time.sleep(2)
-                        resp3 = requests.get(nb_url, params={"pagetoken": next_token2, "key": MAPS_API_KEY}, timeout=15)
-                        resp3.raise_for_status()
-                        data3 = resp3.json()
-                        for p in data3.get("results", []):
+                        resp2 = requests.get(nb_url, params={"pagetoken": next_token, "key": MAPS_API_KEY}, timeout=15)
+                        resp2.raise_for_status()
+                        data2 = resp2.json()
+                        for p in data2.get("results", []):
                             all_raw_places_dict[p.get("place_id")] = p
-                            
-            except Exception as e:
-                logger.error(f"places_nearby failed for '{complex_name}' with keyword '{keyword}': {e}")
-                continue
+
+                        # Page 3
+                        next_token2 = data2.get("next_page_token")
+                        if next_token2:
+                            _time.sleep(2)
+                            resp3 = requests.get(nb_url, params={"pagetoken": next_token2, "key": MAPS_API_KEY}, timeout=15)
+                            resp3.raise_for_status()
+                            data3 = resp3.json()
+                            for p in data3.get("results", []):
+                                all_raw_places_dict[p.get("place_id")] = p
+
+                except Exception as e:
+                    logger.error(f"places_nearby failed for '{complex_name}' with keyword '{keyword}': {e}")
+                    continue
 
         if not all_raw_places_dict:
             return {"location_name": complex_name, "companies": [], "error": "Nearby search API call failed."}
