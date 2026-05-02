@@ -27,7 +27,7 @@ from pydantic import BaseModel, EmailStr
 
 # --- Local modules ---
 from sheets_db import db
-from discovery import discover_companies
+from discovery import discover_companies, calculate_run_accuracy
 from contacts import find_contacts
 from pitches import generate_pitch
 from outreach import send_email
@@ -357,6 +357,11 @@ async def discover(req: DiscoverRequest):
 
     saved_companies = db.add_companies_bulk(companies) if companies else []
 
+    # Calculate accuracy if complex mode
+    accuracy_pct, confidence = 0.0, "N/A"
+    if req.complex_name and companies:
+        accuracy_pct, confidence = calculate_run_accuracy(companies, req.complex_name)
+
     # Log the run
     db.add_run({
         "pincode":        req.pincode or "",
@@ -366,6 +371,8 @@ async def discover(req: DiscoverRequest):
         "contacts_found": 0,
         "emails_sent":    0,
         "status":         "completed",
+        "accuracy_pct":   round(accuracy_pct, 1) if req.complex_name else "",
+        "confidence":     confidence if req.complex_name else "N/A"
     })
 
     return {

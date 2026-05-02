@@ -455,6 +455,8 @@ class SheetsDB:
             "Contacts Found": run_data.get("contacts_found", 0),
             "Emails Sent": run_data.get("emails_sent", 0),
             "Status": run_data.get("status", "completed"),
+            "Accuracy Pct": run_data.get("accuracy_pct", ""),
+            "Confidence": run_data.get("confidence", "N/A"),
             "Timestamp": timestamp,
         }
         self._append_record(ws, row_data)

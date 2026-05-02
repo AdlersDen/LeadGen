@@ -415,6 +415,35 @@ def _get_accepted_aliases(complex_name: str) -> list:
     return _extract_complex_hint(complex_name)
 
 
+def calculate_run_accuracy(companies: list, complex_name: str) -> tuple[float, str]:
+    """
+    Calculates accuracy based on how many results contain at least one hint word
+    in their address.
+    Returns (accuracy_percentage, confidence_label).
+    """
+    if not complex_name or not companies:
+        return 0.0, "N/A"
+    
+    hint_words = _get_accepted_aliases(complex_name)
+    if not hint_words:
+        return 100.0, "High"  # If no hints, we can't verify, assume correct.
+        
+    matches = 0
+    for c in companies:
+        address = (c.get("address", "") + " " + c.get("name", "")).lower()
+        if any(w in address for w in hint_words):
+            matches += 1
+            
+    pct = (matches / len(companies)) * 100
+    if pct >= 80:
+        conf = "High"
+    elif pct >= 50:
+        conf = "Medium"
+    else:
+        conf = "Low"
+    return pct, conf
+
+
 def _is_dense_corridor(complex_name: str) -> bool:
     """Returns True if the complex is inside a known dense industrial/IT corridor."""
     cn_lower = complex_name.lower()
