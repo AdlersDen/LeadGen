@@ -65,7 +65,29 @@ LARGE_CAMPUS_OVERRIDES = {
     "equinox kurla": 350,
     "urmi estate": 200,
     "one international center": 200,
+    "odyssey it park": 250,
+    "ashar it park": 250,
+    "centrum business": 250,
+    "opal square": 200,
 }
+
+# Dense industrial/IT corridors where address strictness must be absolute
+DENSE_IT_CORRIDORS = [
+    "wagle", "wagle estate", "marol industrial",
+    "seepz", "midc andheri", "turbhe midc", "mahape midc"
+]
+
+# Proximity prepositions that signal a place is near but not inside the complex
+PROXIMITY_PREPOSITIONS = [
+    "opposite ", "opp ", "opp.", "near ", "beside ",
+    "next to ", "adjacent to ", "behind "
+]
+
+# Single-tenant campus name patterns — handled as a fast path
+SINGLE_TENANT_PATTERNS = [
+    "tcs ", "tcs campus", "infosys campus", "wipro campus",
+    "hcl campus", "accenture campus", "cognizant campus"
+]
 
 # PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
 ALLOWED_TYPES = {
@@ -292,11 +314,18 @@ def _extract_complex_hint(complex_name: str) -> list:
     return [w for w in words if w not in CITY_WORDS and len(w) > 2]
 
 
+def _is_dense_corridor(complex_name: str) -> bool:
+    """Returns True if the complex is inside a known dense industrial/IT corridor."""
+    cn_lower = complex_name.lower()
+    return any(kw in cn_lower for kw in DENSE_IT_CORRIDORS)
+
+
 def _address_matches_complex(place: dict, complex_name: str) -> bool:
     """
     Returns True if the place's address or name contains at least one
     key word from the complex name. Drops results that are just
     nearby but not actually inside the searched complex.
+    In dense corridors, zero matches = automatic rejection (no proximity fallback).
     """
     hint_words = _extract_complex_hint(complex_name)
     if not hint_words:
@@ -306,7 +335,34 @@ def _address_matches_complex(place: dict, complex_name: str) -> bool:
         place.get("name", "")
     ).lower()
     matches = sum(1 for word in hint_words if word in address)
+    if _is_dense_corridor(complex_name) and matches == 0:
+        return False  # strict — no proximity fallback in dense corridors
     return matches >= 1
+
+
+def _is_proximity_address(place: dict, complex_name: str) -> bool:
+    """
+    Returns True if a proximity preposition appears in the place's
+    vicinity address AND the complex hint words appear after it.
+    Catches "Opposite Mindspace", "Near Nesco IT Park" etc.
+    """
+    hint_words = _extract_complex_hint(complex_name)
+    if not hint_words:
+        return False
+    address = (
+        place.get("vicinity", "") + " " +
+        place.get("formatted_address", "")
+    ).lower()
+    for prep in PROXIMITY_PREPOSITIONS:
+        if prep in address:
+            after = address[address.index(prep) + len(prep):]
+            if any(w in after for w in hint_words):
+                logger.info(
+                    f"Proximity filter: '{place.get('name')}' is '{prep.strip()}' "
+                    f"'{complex_name}' — dropping"
+                )
+                return True
+    return False
 
 
 JUNK_NAME_PATTERNS = [
@@ -474,6 +530,40 @@ def discover_companies(
     if complex_name:
         location_name = complex_name
 
+        # Fast path: single-tenant campus — return just that company without full pipeline
+        cn_lower = complex_name.lower()
+        if any(pat in cn_lower for pat in SINGLE_TENANT_PATTERNS):
+            logger.info(f"Single-tenant campus detected: '{complex_name}' — using fast path")
+            fp_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+            try:
+                st_resp = requests.get(fp_url, params={
+                    "input": complex_name, "inputtype": "textquery",
+                    "fields": "geometry,name,place_id", "key": MAPS_API_KEY,
+                }, timeout=10)
+                st_resp.raise_for_status()
+                st_candidates = st_resp.json().get("candidates", [])
+                if st_candidates:
+                    c = st_candidates[0]
+                    c_name = c.get("name", complex_name)
+                    return {
+                        "location_name": complex_name,
+                        "companies": [{
+                            "name": c_name,
+                            "address": complex_name,
+                            "pincode": "",
+                            "industry": "it_company",
+                            "google_rating": None,
+                            "domain": "",
+                            "phone": "",
+                            "tier": "A",
+                            "status": "discovered",
+                            "source": "Google Maps (single-tenant campus)",
+                        }],
+                    }
+            except Exception as e:
+                logger.warning(f"Single-tenant fast path failed for '{complex_name}': {e}")
+                # Fall through to full pipeline
+
         # Step 1: Resolve the complex to exact coordinates + viewport (3-strategy fallback)
         fp_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
 
@@ -629,6 +719,8 @@ def discover_companies(
         for p in all_places:
             name = p.get("name", "")
             if _is_junk_listing(name, complex_name):
+                continue
+            if _is_proximity_address(p, complex_name):
                 continue
             if _is_conflicting_complex(p, complex_name):
                 logger.info(f"Conflict filter dropped: '{name}' — adjacent complex in '{complex_name}'")
