@@ -33,6 +33,40 @@ SMALL_BUILDING_KEYWORDS = [
     "court", "square", "point"
 ]
 
+# Adjacent complexes that share a street/pin and often bleed into each other
+ADJACENT_COMPLEX_CONFLICTS = {
+    "nirlon": ["nesco", "it 4, nesco"],
+    "nesco": ["nirlon", "nirlon knowledge"],
+    "equinox": ["kanakia", "zillion", "trade centre", "trade center"],
+    "mindspace": ["kanchpada", "new link road", "link road"],
+    "one bkc": ["platina", "trade world"],
+    "the capital": ["il&fs financial centre", "peninsula business park"],
+    "urmi": ["peninsula business park", "marathon futurex"],
+    "manyata": ["loma it park", "aurum"],
+    "reliance corporate": ["aurum q parc", "loma it park"],
+}
+
+# Known IT/business parks for cross-park contamination detection
+KNOWN_IT_PARKS = [
+    "nirlon", "nesco", "equinox", "mindspace", "one bkc", "the capital",
+    "urmi estate", "manyata", "reliance corporate", "bkc", "peninsula business park",
+    "marathon futurex", "loma it park", "aurum q parc", "kanakia", "zillion",
+    "platina", "trade world", "trade centre", "trade center", "il&fs financial centre",
+    "gigaplex", "hinjewadi", "magarpatta", "cybercity", "hitech city",
+    "prestige tech park", "bagmane", "rmz ecospace", "embassy golf links",
+]
+
+# Fixed radius overrides for specific complexes (bypass all viewport logic)
+LARGE_CAMPUS_OVERRIDES = {
+    "mindspace malad": 500,
+    "mindspace airoli": 1000,
+    "raheja mindspace": 1200,
+    "equinox business park": 350,
+    "equinox kurla": 350,
+    "urmi estate": 200,
+    "one international center": 200,
+}
+
 # PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
 ALLOWED_TYPES = {
     "corporate_office", "office", "accounting", "insurance_agency",
@@ -106,8 +140,17 @@ def get_radius_from_viewport(viewport: dict, complex_name: str = "") -> float:
     """
     Derives a search radius (metres) from a Google Maps viewport dict.
     Applies large-campus detection to expand the radius for known IT/business parks.
+    Checks LARGE_CAMPUS_OVERRIDES first for fixed-radius complexes.
     """
-    is_large_campus = any(kw in complex_name.lower() for kw in LARGE_CAMPUS_KEYWORDS)
+    cn_lower = complex_name.lower()
+
+    # Fixed override check — bypasses all other logic
+    for key, fixed_radius in LARGE_CAMPUS_OVERRIDES.items():
+        if key in cn_lower:
+            logger.info(f"Radius override for '{complex_name}': {fixed_radius} m (from LARGE_CAMPUS_OVERRIDES)")
+            return float(fixed_radius)
+
+    is_large_campus = any(kw in cn_lower for kw in LARGE_CAMPUS_KEYWORDS)
 
     ne = viewport.get("northeast", {})
     sw = viewport.get("southwest", {})
@@ -273,6 +316,43 @@ JUNK_NAME_PATTERNS = [
     "lake", "helipad", "garden", "ground", "playground",
     "security", "reception", "lobby"
 ]
+
+
+def _is_conflicting_complex(place: dict, complex_name: str) -> bool:
+    """
+    Returns True if the place's address or name contains a known adjacent
+    complex that conflicts with the one being searched.
+    """
+    cn_lower = complex_name.lower()
+    # Find which conflict list to use (match partial key)
+    conflict_list = []
+    for key, conflicts in ADJACENT_COMPLEX_CONFLICTS.items():
+        if key in cn_lower:
+            conflict_list = conflicts
+            break
+    if not conflict_list:
+        return False
+    address = (
+        place.get("vicinity", "") + " " + place.get("name", "")
+    ).lower()
+    return any(conflict in address for conflict in conflict_list)
+
+
+def _mentions_different_park(place: dict, complex_name: str) -> bool:
+    """
+    Returns True if the place's address or name references a different
+    known IT/business park than the one being searched.
+    """
+    cn_lower = complex_name.lower()
+    address = (
+        place.get("vicinity", "") + " " + place.get("name", "")
+    ).lower()
+    for park in KNOWN_IT_PARKS:
+        if park in cn_lower:
+            continue  # This is the park we're searching — skip it
+        if park in address:
+            return True
+    return False
 
 
 def _is_junk_listing(name: str, complex_name: str = "") -> bool:
@@ -543,12 +623,21 @@ def discover_companies(
             f"{len(inside_places) - len(address_verified)} dropped for '{complex_name}'"
         )
 
-        # Step 5: Apply junk filter then corporate / B2B filter
+        # Step 5: Apply junk filter, conflict filter, then corporate / B2B filter
         all_places = address_verified
-        b2b_places = [
-            p for p in all_places
-            if not _is_junk_listing(p.get("name", ""), complex_name) and _is_b2b_company(p)
-        ]
+        b2b_places = []
+        for p in all_places:
+            name = p.get("name", "")
+            if _is_junk_listing(name, complex_name):
+                continue
+            if _is_conflicting_complex(p, complex_name):
+                logger.info(f"Conflict filter dropped: '{name}' — adjacent complex in '{complex_name}'")
+                continue
+            if _mentions_different_park(p, complex_name):
+                logger.info(f"Park filter dropped: '{name}' — references different park")
+                continue
+            if _is_b2b_company(p):
+                b2b_places.append(p)
         logger.info(
             f"B2B filter: {len(all_places)} inside boundary, {len(b2b_places)} corporate for '{complex_name}'"
         )
