@@ -63,6 +63,40 @@ INDUSTRY_KEYWORDS = {
 }
 
 
+# ── Utility: Haversine distance ───────────────────────────────────────────────
+import math
+
+def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """
+    Returns the great-circle distance in metres between two lat/lng points.
+    Uses the Haversine formula.
+    """
+    R = 6_371_000  # Earth radius in metres
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi        = math.radians(lat2 - lat1)
+    dlambda     = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def get_radius_from_viewport(viewport: dict) -> float:
+    """
+    Derives a search radius (metres) from a Google Maps viewport dict that
+    contains 'northeast' and 'southwest' lat/lng bounds.
+    Uses the half-diagonal of the bounding box, capped between 200 m and 1000 m.
+    """
+    ne = viewport.get("northeast", {})
+    sw = viewport.get("southwest", {})
+    if not ne or not sw:
+        return 500.0  # safe default
+    diagonal = haversine_distance(
+        sw.get("lat", 0), sw.get("lng", 0),
+        ne.get("lat", 0), ne.get("lng", 0),
+    )
+    radius = diagonal / 2
+    return max(200.0, min(radius, 1000.0))
+
+
 def _pincode_to_coords(pincode: str) -> tuple:
     """Convert Indian pincode to lat/lng via Google Geocoding API."""
     url = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -231,22 +265,91 @@ def discover_companies(
         logger.error("GOOGLE_MAPS_API_KEY is not set.")
         return {"location_name": complex_name or pincode, "companies": []}
 
-    # ── Complex / Area mode (Text Search — works globally) ────────────────────
+    # ── Complex / Area mode — strict boundary enforcement ────────────────────
     if complex_name:
         location_name = complex_name
-        if industries:
-            industry_terms = " ".join(
-                INDUSTRY_KEYWORDS.get(ind, ind) for ind in industries[:2]
-            )
-            query = f"{industry_terms} companies in {complex_name}"
-        else:
-            query = f"corporate offices in {complex_name}"
 
-        logger.info(f"Text search (global): {query}")
-        all_places = _fetch_text_search(query)
+        # Step 1: Resolve the complex to exact coordinates + viewport
+        fp_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+        fp_params = {
+            "input": complex_name,
+            "inputtype": "textquery",
+            "fields": "geometry,name",
+            "key": MAPS_API_KEY,
+        }
+        try:
+            fp_resp = requests.get(fp_url, params=fp_params, timeout=10)
+            fp_resp.raise_for_status()
+            fp_data = fp_resp.json()
+        except Exception as e:
+            logger.error(f"find_place failed for '{complex_name}': {e}")
+            return {"location_name": complex_name, "companies": [], "error": "find_place API call failed."}
+
+        candidates = fp_data.get("candidates", [])
+        if not candidates:
+            logger.warning(f"find_place returned no candidates for '{complex_name}'")
+            return {"location_name": complex_name, "companies": [], "error": "Complex not found on Google Maps."}
+
+        geometry  = candidates[0].get("geometry", {})
+        location  = geometry.get("location", {})
+        viewport  = geometry.get("viewport", {})
+        cx_lat    = location.get("lat")
+        cx_lng    = location.get("lng")
+
+        if not cx_lat or not cx_lng:
+            logger.error(f"find_place returned geometry without location for '{complex_name}'")
+            return {"location_name": complex_name, "companies": [], "error": "Could not resolve complex coordinates."}
+
+        # Step 2: Derive search radius from viewport (haversine half-diagonal, 200–1000 m)
+        radius_m = get_radius_from_viewport(viewport)
+        logger.info(
+            f"Complex '{complex_name}' → ({cx_lat}, {cx_lng}), viewport radius={radius_m:.0f} m"
+        )
+
+        # Step 3: Nearby search centred on the complex, keyword='office'
+        nb_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        nb_params = {
+            "location": f"{cx_lat},{cx_lng}",
+            "radius":   int(radius_m),
+            "keyword":  "office",
+            "key":      MAPS_API_KEY,
+        }
+        try:
+            nb_resp = requests.get(nb_url, params=nb_params, timeout=15)
+            nb_resp.raise_for_status()
+            nb_data = nb_resp.json()
+        except Exception as e:
+            logger.error(f"places_nearby failed for '{complex_name}': {e}")
+            return {"location_name": complex_name, "companies": [], "error": "Nearby search API call failed."}
+
+        raw_places = nb_data.get("results", [])
+        logger.info(f"places_nearby: {len(raw_places)} raw results for '{complex_name}'")
+
+        # Step 4: Secondary haversine coordinate filter — drop places outside the radius
+        inside_places = []
+        dropped = 0
+        for p in raw_places:
+            p_loc  = p.get("geometry", {}).get("location", {})
+            p_lat  = p_loc.get("lat")
+            p_lng  = p_loc.get("lng")
+            if p_lat is None or p_lng is None:
+                dropped += 1
+                continue
+            dist = haversine_distance(cx_lat, cx_lng, p_lat, p_lng)
+            if dist <= radius_m:
+                inside_places.append(p)
+            else:
+                dropped += 1
+
+        logger.info(
+            f"Haversine filter: {len(inside_places)} inside radius, {dropped} dropped outside '{complex_name}'"
+        )
+
+        # Step 5: Apply corporate / B2B filter
+        all_places = inside_places
         b2b_places = [p for p in all_places if _is_b2b_company(p)]
         logger.info(
-            f"Text search: {len(all_places)} raw, {len(b2b_places)} B2B-filtered for '{complex_name}'"
+            f"B2B filter: {len(all_places)} inside boundary, {len(b2b_places)} corporate for '{complex_name}'"
         )
 
     # ── Pincode mode ──────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 
 SHEET_HEADERS = {
     "Companies": [
-        "ID", "Name", "Industry", "Address", "Domain", "Pincode",
+        "ID", "Name", "Industry", "Address", "Domain", "Phone", "Pincode",
         "Employee Count", "Tier", "Contacts Extracted", "Status", "Created Date",
     ],
     "Contacts": [
@@ -184,6 +184,7 @@ class SheetsDB:
             "Industry": company_data.get("industry", ""),
             "Address": company_data.get("address", ""),
             "Domain": company_data.get("domain", ""),
+            "Phone": company_data.get("phone", ""),
             "Pincode": company_data.get("pincode", ""),
             "Employee Count": company_data.get("employee_count", ""),
             "Tier": company_data.get("tier", ""),
@@ -239,6 +240,7 @@ class SheetsDB:
                 "Industry": company_data.get("industry", ""),
                 "Address": company_data.get("address", ""),
                 "Domain": company_data.get("domain", ""),
+                "Phone": company_data.get("phone", ""),
                 "Pincode": company_data.get("pincode", ""),
                 "Employee Count": company_data.get("employee_count", ""),
                 "Tier": company_data.get("tier", ""),
