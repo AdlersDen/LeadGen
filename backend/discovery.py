@@ -88,13 +88,13 @@ def get_radius_from_viewport(viewport: dict) -> float:
     ne = viewport.get("northeast", {})
     sw = viewport.get("southwest", {})
     if not ne or not sw:
-        return 500.0  # safe default
+        return 800.0  # safe default
     diagonal = haversine_distance(
         sw.get("lat", 0), sw.get("lng", 0),
         ne.get("lat", 0), ne.get("lng", 0),
     )
     radius = diagonal / 2
-    return max(200.0, min(radius, 1000.0))
+    return max(500.0, min(radius, 1500.0))
 
 
 def _pincode_to_coords(pincode: str) -> tuple:
@@ -306,24 +306,56 @@ def discover_companies(
             f"Complex '{complex_name}' → ({cx_lat}, {cx_lng}), viewport radius={radius_m:.0f} m"
         )
 
-        # Step 3: Nearby search centred on the complex, keyword='office'
+        # Step 3: Two separate nearby searches ('office' and 'corporate'), up to 3 pages each
+        import time as _time
         nb_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        nb_params = {
-            "location": f"{cx_lat},{cx_lng}",
-            "radius":   int(radius_m),
-            "keyword":  "office",
-            "key":      MAPS_API_KEY,
-        }
-        try:
-            nb_resp = requests.get(nb_url, params=nb_params, timeout=15)
-            nb_resp.raise_for_status()
-            nb_data = nb_resp.json()
-        except Exception as e:
-            logger.error(f"places_nearby failed for '{complex_name}': {e}")
+        all_raw_places_dict = {}
+
+        for keyword in ["office", "corporate"]:
+            nb_params = {
+                "location": f"{cx_lat},{cx_lng}",
+                "radius":   int(radius_m),
+                "keyword":  keyword,
+                "key":      MAPS_API_KEY,
+            }
+            try:
+                nb_resp = requests.get(nb_url, params=nb_params, timeout=15)
+                nb_resp.raise_for_status()
+                nb_data = nb_resp.json()
+                
+                # Page 1
+                for p in nb_data.get("results", []):
+                    all_raw_places_dict[p.get("place_id")] = p
+                
+                # Page 2
+                next_token = nb_data.get("next_page_token")
+                if next_token:
+                    _time.sleep(2)
+                    resp2 = requests.get(nb_url, params={"pagetoken": next_token, "key": MAPS_API_KEY}, timeout=15)
+                    resp2.raise_for_status()
+                    data2 = resp2.json()
+                    for p in data2.get("results", []):
+                        all_raw_places_dict[p.get("place_id")] = p
+                    
+                    # Page 3
+                    next_token2 = data2.get("next_page_token")
+                    if next_token2:
+                        _time.sleep(2)
+                        resp3 = requests.get(nb_url, params={"pagetoken": next_token2, "key": MAPS_API_KEY}, timeout=15)
+                        resp3.raise_for_status()
+                        data3 = resp3.json()
+                        for p in data3.get("results", []):
+                            all_raw_places_dict[p.get("place_id")] = p
+                            
+            except Exception as e:
+                logger.error(f"places_nearby failed for '{complex_name}' with keyword '{keyword}': {e}")
+                continue
+
+        if not all_raw_places_dict:
             return {"location_name": complex_name, "companies": [], "error": "Nearby search API call failed."}
 
-        raw_places = nb_data.get("results", [])
-        logger.info(f"places_nearby: {len(raw_places)} raw results for '{complex_name}'")
+        raw_places = list(all_raw_places_dict.values())
+        logger.info(f"places_nearby: {len(raw_places)} deduped results for '{complex_name}'")
 
         # Step 4: Secondary haversine coordinate filter — drop places outside the radius
         inside_places = []
