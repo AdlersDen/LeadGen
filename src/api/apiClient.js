@@ -7,7 +7,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 60000, // 60s — discovery + pitch gen can be slow
+  timeout: 120000, // 120s — discovery + pitch gen can be slow, + Render cold starts
 });
 
 // Global response interceptor for error normalization
