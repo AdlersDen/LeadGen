@@ -101,7 +101,13 @@ def get_radius_from_viewport(viewport: dict) -> float:
         ne.get("lat", 0), ne.get("lng", 0),
     )
     radius = diagonal / 2
-    return max(500.0, min(radius, 1500.0))
+    # Three-tier radius logic based on complex physical size
+    if radius <= 300:
+        return max(150.0, radius)   # Single building — very tight
+    elif radius <= 700:
+        return radius * 0.80        # Medium complex — slight shrink
+    else:
+        return min(radius, 1200.0)  # Large campus — cap at 1200 m
 
 
 def _pincode_to_coords(pincode: str) -> tuple:
@@ -174,6 +180,36 @@ def _fetch_text_search(query: str) -> list:
     except Exception as e:
         logger.error(f"Text search failed for '{query}': {e}")
     return all_results
+
+
+CITY_WORDS = {
+    "mumbai", "pune", "bangalore", "bengaluru", "gurugram",
+    "gurgaon", "delhi", "hyderabad", "chennai", "kolkata",
+    "noida", "thane", "navi", "london", "dubai", "singapore"
+}
+
+
+def _extract_complex_hint(complex_name: str) -> list:
+    """Extract key words from complex name, removing city names."""
+    words = complex_name.lower().split()
+    return [w for w in words if w not in CITY_WORDS and len(w) > 2]
+
+
+def _address_matches_complex(place: dict, complex_name: str) -> bool:
+    """
+    Returns True if the place's address or name contains at least one
+    key word from the complex name. Drops results that are just
+    nearby but not actually inside the searched complex.
+    """
+    hint_words = _extract_complex_hint(complex_name)
+    if not hint_words:
+        return True  # can't verify, allow through
+    address = (
+        place.get("vicinity", "") + " " +
+        place.get("name", "")
+    ).lower()
+    matches = sum(1 for word in hint_words if word in address)
+    return matches >= 1
 
 
 JUNK_NAME_PATTERNS = [
@@ -400,8 +436,24 @@ def discover_companies(
             f"Haversine filter: {len(inside_places)} inside radius, {dropped} dropped outside '{complex_name}'"
         )
 
+        # Step 4b: Address-based verification — drop results not referencing the complex
+        address_verified = []
+        for p in inside_places:
+            if _address_matches_complex(p, complex_name):
+                address_verified.append(p)
+            else:
+                logger.info(
+                    f"Address filter dropped: '{p.get('name')}' "
+                    f"— not in '{complex_name}'"
+                )
+
+        logger.info(
+            f"Address filter: {len(address_verified)} verified, "
+            f"{len(inside_places) - len(address_verified)} dropped for '{complex_name}'"
+        )
+
         # Step 5: Apply junk filter then corporate / B2B filter
-        all_places = inside_places
+        all_places = address_verified
         b2b_places = [
             p for p in all_places
             if not _is_junk_listing(p.get("name", "")) and _is_b2b_company(p)
