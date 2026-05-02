@@ -18,6 +18,15 @@ logger = logging.getLogger(__name__)
 
 MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
+# Large campus / IT park keywords for expanded radius detection
+LARGE_CAMPUS_KEYWORDS = [
+    "tech park", "it park", "knowledge park", "business park",
+    "industrial area", "midc", "sez", "special economic zone",
+    "mindspace", "manyata", "nesco", "hinjewadi", "electronic city",
+    "cyber city", "cybercity", "hitech city", "whitefield",
+    "gigaplex", "airoli", "powai", "andheri midc"
+]
+
 # PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
 ALLOWED_TYPES = {
     "corporate_office", "office", "accounting", "insurance_agency",
@@ -86,28 +95,35 @@ def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> fl
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def get_radius_from_viewport(viewport: dict) -> float:
+def get_radius_from_viewport(viewport: dict, complex_name: str = "") -> float:
     """
-    Derives a search radius (metres) from a Google Maps viewport dict that
-    contains 'northeast' and 'southwest' lat/lng bounds.
-    Uses the half-diagonal of the bounding box, capped between 200 m and 1000 m.
+    Derives a search radius (metres) from a Google Maps viewport dict.
+    Applies large-campus detection to expand the radius for known IT/business parks.
     """
+    is_large_campus = any(kw in complex_name.lower() for kw in LARGE_CAMPUS_KEYWORDS)
+
     ne = viewport.get("northeast", {})
     sw = viewport.get("southwest", {})
     if not ne or not sw:
-        return 800.0  # safe default
+        return 1000.0 if is_large_campus else 800.0
+
     diagonal = haversine_distance(
         sw.get("lat", 0), sw.get("lng", 0),
         ne.get("lat", 0), ne.get("lng", 0),
     )
     radius = diagonal / 2
+
+    # Large campus override — expand aggressively, cap at 2000 m
+    if is_large_campus:
+        return max(800.0, min(radius * 1.5, 2000.0))
+
     # Three-tier radius logic based on complex physical size
     if radius <= 300:
         return max(150.0, radius)   # Single building — very tight
     elif radius <= 700:
         return radius * 0.80        # Medium complex — slight shrink
     else:
-        return min(radius, 1200.0)  # Large campus — cap at 1200 m
+        return min(radius, 1200.0)  # Large area — cap at 1200 m
 
 
 def _pincode_to_coords(pincode: str) -> tuple:
@@ -370,7 +386,7 @@ def discover_companies(
             return {"location_name": complex_name, "companies": [], "error": "Could not resolve complex coordinates."}
 
         # Step 2: Derive search radius from viewport (haversine half-diagonal, 200–1000 m)
-        radius_m = get_radius_from_viewport(viewport)
+        radius_m = get_radius_from_viewport(viewport, complex_name)
         logger.info(
             f"Complex '{complex_name}' → ({cx_lat}, {cx_lng}), viewport radius={radius_m:.0f} m"
         )
