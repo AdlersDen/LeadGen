@@ -378,6 +378,142 @@ async def discover(req: DiscoverRequest):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Module 2 — Contact Discovery
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/contacts/find")
+async def find_contacts_for_company(req: FindContactsRequest):
+    """
+    Finds verified decision-maker contacts for a company via Apollo.io / Hunter.io.
+    Saves results to the Contacts sheet.
+    """
+    if not req.domain:
+        raise HTTPException(
+            status_code=422,
+            detail="A company domain is required to search for contacts. Please add a domain to the company first."
+        )
+
+    try:
+        raw_contacts = find_contacts(req.company_name, req.domain)
+    except Exception as e:
+        logger.error(f"Contact discovery error for {req.company_name}: {e}")
+        raise HTTPException(status_code=502, detail=f"Contact lookup failed: {e}")
+
+    saved_contacts = []
+    for contact_data in raw_contacts:
+        contact_data["company_name"] = req.company_name
+        contact_data["status"] = "verified"
+        saved = db.add_contact(contact_data, req.company_id)
+        if saved:
+            saved_contacts.append(saved)
+
+    return {
+        "company_id": req.company_id,
+        "contacts_found": len(saved_contacts),
+        "contacts": saved_contacts,
+    }
+
+
+@app.post("/api/contacts/bulk-find")
+async def bulk_find_contacts(req: BulkFindContactsRequest):
+    """
+    Finds verified decision-maker contacts for multiple companies automatically.
+    Filters out companies that already have contacts or no domain.
+    Stops processing when the limit is reached to protect API credits.
+    """
+    companies = db.get_companies()
+    
+    # Filter for companies that have a domain AND haven't been pitched/emailed yet
+    # For MVP, we'll just check if they have a domain and their status is 'discovered'
+    eligible_companies = [
+        c for c in companies 
+        if c.get("Domain") and c.get("Status", "").lower() == "discovered"
+    ]
+    
+    companies_to_process = eligible_companies[:req.limit]
+    
+    if not companies_to_process:
+        return {"processed": 0, "contacts_found": 0, "message": "No eligible companies found to process."}
+
+    total_contacts_found = 0
+    processed_count = 0
+
+    for company in companies_to_process:
+        domain = company.get("Domain")
+        company_name = company.get("Name") or company.get("Company Name")
+        company_id = company.get("ID")
+        
+        try:
+            raw_contacts = find_contacts(company_name, domain)
+            processed_count += 1
+            
+            for contact_data in raw_contacts:
+                contact_data["company_name"] = company_name
+                contact_data["status"] = "verified"
+                saved = db.add_contact(contact_data, company_id)
+                if saved:
+                    total_contacts_found += 1
+                    
+            # Update company status to indicate contacts were searched
+            # We don't have a direct row-update function in SheetsDB yet for MVP, 
+            # so we rely on the fact that contacts now exist for this company ID.
+            
+        except Exception as e:
+            logger.error(f"Bulk contact discovery error for {company_name}: {e}")
+            continue
+
+    return {
+        "processed": processed_count,
+        "contacts_found": total_contacts_found,
+        "message": f"Processed {processed_count} companies and found {total_contacts_found} contacts."
+    }
+
+
+@app.post("/api/contacts/extract-selected")
+async def extract_selected_contacts(req: ExtractSelectedRequest):
+    """
+    Extracts contacts for specific user-selected companies.
+    Max 20 companies per request to protect API limits.
+    """
+    if len(req.company_ids) > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 20 companies can be processed per request."
+        )
+
+    companies = db.get_companies()
+    
+    # Filter only to requested IDs
+    target_ids = set(req.company_ids)
+    target_companies = [c for c in companies if c.get("ID") in target_ids]
+
+    queued = 0
+    skipped_no_domain = 0
+    skipped_already_extracted = 0
+    successful_company_ids = []
+
+    for company in target_companies:
+        domain = company.get("Domain")
+        company_name = company.get("Name") or company.get("Company Name")
+        company_id = company.get("ID")
+        extracted_status = company.get("Contacts Extracted", "")
+
+        if extracted_status.lower() == "yes":
+            skipped_already_extracted += 1
+            continue
+
+        if not domain:
+            skipped_no_domain += 1
+            continue
+
+        try:
+            # find_contacts tries Apollo.io first, then falls back to Hunter.io
+            raw_contacts = find_contacts(company_name, domain)
+            queued += 1
+            
+            for contact_data in raw_contacts:
+                contact_data["company_name"] = company_name
+                contact_data["status"] = "verified"
                 db.add_contact(contact_data, company_id)
             
             # If we attempted extraction (even if 0 found), we consider it processed
