@@ -45,6 +45,16 @@ ADJACENT_COMPLEX_CONFLICTS = {
     "manyata": ["loma it park", "aurum"],
     "reliance corporate": ["aurum q parc", "loma it park"],
     "am naik": ["atl corporate", "saki vihar", "emerald isle"],
+    "cyber city": [
+        "phase 1,", "phase i,", "phase 2,", "phase ii,",
+        "phase 4,", "phase iv,", "phase 5,", "phase v,",
+        "south city", "sector 24,", "sector 25,",
+        "golf course road", "mg road gurgaon"
+    ],
+    "dlf cyber": [
+        "phase 1", "phase 2", "phase 4", "phase 5",
+        "south city", "sector 24", "sector 25"
+    ],
 }
 
 # Known IT/business parks for cross-park contamination detection
@@ -106,6 +116,14 @@ GOVERNMENT_SEZ_OVERRIDES = {
         "lat": 19.0664, "lng": 72.8652, "radius": 300,
         "aliases": ["jio world", "bkc", "bandra kurla", "jio world centre"]
     },
+    "gift city": {
+        "lat": 23.1685, "lng": 72.6840, "radius": 1000,
+        "aliases": ["gift city", "gift sez", "gandhinagar", "ifsc", "gujarat international"]
+    },
+    "gift sez": {
+        "lat": 23.1685, "lng": 72.6840, "radius": 1000,
+        "aliases": ["gift city", "gift sez", "gandhinagar", "ifsc", "gujarat international"]
+    },
 }
 
 # Known aliases for complexes whose Google Maps addresses use different words
@@ -121,6 +139,11 @@ COMPLEX_ADDRESS_ALIASES = {
     "manyata": ["manyata", "nagavara", "hebbal"],
     "hinjewadi": ["hinjewadi", "rajiv gandhi", "phase"],
     "magarpatta": ["magarpatta", "hadapsar", "cybercity"],
+    "gift city": ["gift city", "gift sez", "gandhinagar", "ifsc", "gujarat international"],
+    "gift sez": ["gift city", "gift sez", "gandhinagar", "ifsc", "gujarat international"],
+    "cyber city": ["cyber city", "cybercity", "dlf cyber", "sector 25", "sector 24", "gurgaon"],
+    "eon": ["eon", "kharadi", "eon free zone", "weikfield"],
+    "magarpatta cybercity": ["magarpatta", "hadapsar", "cybercity", "magarpatta city"],
 }
 
 # Mixed-use venues that respond poorly to nearby keyword searches — use text search instead
@@ -349,10 +372,35 @@ CITY_WORDS = {
 }
 
 
+# Phrases that must be preserved as units in hint extraction (not split into individual words)
+PRESERVE_PHRASES = [
+    "cyber city", "cyber hub", "gift city", "gift sez",
+    "world trade", "knowledge park", "business park",
+    "tech park", "it park", "free zone"
+]
+
+
 def _extract_complex_hint(complex_name: str) -> list:
-    """Extract key words from complex name, removing city names."""
-    words = complex_name.lower().split()
-    return [w for w in words if w not in CITY_WORDS and len(w) > 2]
+    """Extract key words from complex name, removing city names.
+    Preserves multi-word phrases (e.g. 'cyber city') as single hint tokens
+    so they match correctly in address strings.
+    """
+    cn_lower = complex_name.lower()
+    hints = []
+    remaining = cn_lower
+
+    # Extract and preserve multi-word phrases first
+    for phrase in PRESERVE_PHRASES:
+        if phrase in remaining:
+            hints.append(phrase)
+            remaining = remaining.replace(phrase, " ")  # blank out so words aren't re-added
+
+    # Process remaining individual words
+    for w in remaining.split():
+        if w not in CITY_WORDS and len(w) > 2:
+            hints.append(w)
+
+    return hints
 
 
 def _get_accepted_aliases(complex_name: str) -> list:
