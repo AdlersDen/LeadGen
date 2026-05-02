@@ -23,13 +23,13 @@ ALLOWED_TYPES = {
     "corporate_office", "office", "accounting", "insurance_agency",
     "finance", "lawyer", "real_estate_agency", "travel_agency",
     "moving_company", "storage", "courier", "freight_forwarder",
-    "warehouse", "manufacturing", "general_contractor",
-    "staffing_agency", "consultant", "software_company",
-    "advertising_agency", "marketing", "it_company",
+    "warehouse", "manufacturing", "general_contractor", "staffing_agency",
+    "consultant", "software_company", "advertising_agency", "marketing",
+    "it_company", "bank"  # bank added back — remove ATMs by name check instead
 }
 
 # PRD §6.1 — Types to EXCLUDE explicitly
-EXCLUDED_TYPES = {
+BLOCKLIST_TYPES = {
     "restaurant", "food", "cafe", "bar", "bakery", "meal_delivery",
     "meal_takeaway", "lodging", "hotel", "beauty_salon", "hair_care",
     "spa", "gym", "fitness_center", "hospital", "doctor", "pharmacy",
@@ -39,14 +39,21 @@ EXCLUDED_TYPES = {
     "electronics_store", "furniture_store", "jewelry_store", "pet_store",
     "hardware_store", "book_store", "bicycle_store", "car_dealer",
     "car_repair", "car_wash", "gas_station", "parking", "atm",
-    "bank", "post_office", "local_government_office", "ambulance_station",
-    "fire_station", "police",
+    "post_office", "local_government_office", "ambulance_station",
+    "fire_station", "police", "night_club", "amusement_park", "casino",
+    "bowling_alley", "movie_theater", "stadium", "zoo", "aquarium",
+    "laundry", "funeral_home", "cemetery"
 }
 
 # Neutral types that are acceptable (IT parks, business parks, etc.)
-NEUTRAL_ALLOWED_KEYWORDS = ["pvt", "ltd", "llp", "inc", "corp", "limited", "technologies",
-                              "solutions", "services", "consulting", "software", "systems",
-                              "enterprises", "industries", "group", "associates", "partners"]
+CORPORATE_KEYWORDS = [
+    "pvt", "ltd", "llp", "inc", "corp", "limited",
+    "technologies", "solutions", "services", "consulting",
+    "software", "systems", "enterprises", "industries",
+    "group", "associates", "partners", "foundation",
+    "capital", "ventures", "investments", "financial",
+    "management", "global", "international", "india"
+]
 
 # Industry value key -> search terms for complex text search
 INDUSTRY_KEYWORDS = {
@@ -175,10 +182,14 @@ def _is_b2b_company(place: dict) -> bool:
     Checks Google types + name heuristics.
     """
     place_types = set(place.get("types", []))
-    name = place.get("name", "").lower()
+    name_lower = place.get("name", "").lower()
+
+    # Skip ATMs even if type is "bank"
+    if "atm" in name_lower and len(name_lower) < 15:
+        return False
 
     # Hard exclude
-    if place_types & EXCLUDED_TYPES:
+    if place_types & BLOCKLIST_TYPES:
         return False
 
     # Hard include based on type
@@ -186,7 +197,7 @@ def _is_b2b_company(place: dict) -> bool:
         return True
 
     # Heuristic — company name contains a B2B keyword
-    if any(kw in name for kw in NEUTRAL_ALLOWED_KEYWORDS):
+    if any(kw in name_lower for kw in CORPORATE_KEYWORDS):
         return True
 
     return False
