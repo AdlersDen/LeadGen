@@ -27,6 +27,12 @@ LARGE_CAMPUS_KEYWORDS = [
     "gigaplex", "airoli", "powai", "andheri midc"
 ]
 
+# Single-building/tower keywords — tighter radius
+SMALL_BUILDING_KEYWORDS = [
+    "tower", "house", "centre", "center", "plaza",
+    "court", "square", "point"
+]
+
 # PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
 ALLOWED_TYPES = {
     "corporate_office", "office", "accounting", "insurance_agency",
@@ -51,7 +57,8 @@ BLOCKLIST_TYPES = {
     "post_office", "local_government_office", "ambulance_station",
     "fire_station", "police", "night_club", "amusement_park", "casino",
     "bowling_alley", "movie_theater", "stadium", "zoo", "aquarium",
-    "laundry", "funeral_home", "cemetery", "home_goods_store", "store"
+    "laundry", "funeral_home", "cemetery", "home_goods_store", "store",
+    "natural_feature", "park", "airport"
 }
 
 # Neutral types that are acceptable (IT parks, business parks, etc.)
@@ -116,6 +123,11 @@ def get_radius_from_viewport(viewport: dict, complex_name: str = "") -> float:
     # Large campus override — expand aggressively, cap at 2000 m
     if is_large_campus:
         return max(800.0, min(radius * 1.5, 2000.0))
+
+    # Small building cap — tighten radius if not a large campus
+    cn_lower = complex_name.lower()
+    if not is_large_campus and any(kw in cn_lower for kw in SMALL_BUILDING_KEYWORDS):
+        return max(150.0, min(radius, 400.0))
 
     # Three-tier radius logic based on complex physical size
     if radius <= 300:
@@ -198,10 +210,36 @@ def _fetch_text_search(query: str) -> list:
     return all_results
 
 
+# Locality-to-city mapping for complex name simplification
+_LOCALITY_TO_CITY = {
+    "mahape": "Navi Mumbai", "juinagar": "Navi Mumbai", "ghansoli": "Navi Mumbai",
+    "turbhe": "Navi Mumbai", "airoli": "Navi Mumbai",
+    "kharadi": "Pune", "hinjewadi": "Pune",
+    "whitefield": "Bangalore", "nagavara": "Bangalore",
+}
+
+
+def simplify_complex_name(complex_name: str) -> str:
+    """Replace known locality words with their parent city name."""
+    words = complex_name.split()
+    out = []
+    for w in words:
+        replacement = _LOCALITY_TO_CITY.get(w.lower())
+        if replacement and replacement not in " ".join(out):
+            out.append(replacement)
+        else:
+            out.append(w)
+    return " ".join(out)
+
+
 CITY_WORDS = {
     "mumbai", "pune", "bangalore", "bengaluru", "gurugram",
     "gurgaon", "delhi", "hyderabad", "chennai", "kolkata",
-    "noida", "thane", "navi", "london", "dubai", "singapore"
+    "noida", "thane", "navi", "london", "dubai", "singapore",
+    "vashi", "sector", "kharghar", "belapur", "ghansoli",
+    "turbhe", "sanpada", "juinagar", "nerul", "seawoods",
+    "mahape", "airoli", "andheri", "goregaon", "malad",
+    "kurla", "dadar", "worli", "parel"
 }
 
 
@@ -231,7 +269,9 @@ def _address_matches_complex(place: dict, complex_name: str) -> bool:
 JUNK_NAME_PATTERNS = [
     "internal road", "gate ", "entrance", "exit",
     "parking lot", "bus stop", "metro station",
-    "food court", "canteen", "cafeteria", "atm"
+    "food court", "canteen", "cafeteria", "atm",
+    "lake", "helipad", "garden", "ground", "playground",
+    "security", "reception", "lobby"
 ]
 
 
@@ -354,26 +394,51 @@ def discover_companies(
     if complex_name:
         location_name = complex_name
 
-        # Step 1: Resolve the complex to exact coordinates + viewport
+        # Step 1: Resolve the complex to exact coordinates + viewport (3-strategy fallback)
         fp_url = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
-        fp_params = {
-            "input": complex_name,
-            "inputtype": "textquery",
-            "fields": "geometry,name",
-            "key": MAPS_API_KEY,
-        }
-        try:
-            fp_resp = requests.get(fp_url, params=fp_params, timeout=10)
-            fp_resp.raise_for_status()
-            fp_data = fp_resp.json()
-        except Exception as e:
-            logger.error(f"find_place failed for '{complex_name}': {e}")
-            return {"location_name": complex_name, "companies": [], "error": "find_place API call failed."}
 
-        candidates = fp_data.get("candidates", [])
+        def _find_place(query: str):
+            """Call find_place and return candidates list."""
+            try:
+                resp = requests.get(fp_url, params={
+                    "input": query, "inputtype": "textquery",
+                    "fields": "geometry,name", "key": MAPS_API_KEY,
+                }, timeout=10)
+                resp.raise_for_status()
+                return resp.json().get("candidates", [])
+            except Exception as e:
+                logger.error(f"find_place HTTP error for '{query}': {e}")
+                return []
+
+        # Strategy 1: exact name
+        candidates = _find_place(complex_name)
+
+        # Strategy 2: simplified name (swap locality → city)
         if not candidates:
-            logger.warning(f"find_place returned no candidates for '{complex_name}'")
-            return {"location_name": complex_name, "companies": [], "error": "Complex not found on Google Maps."}
+            simplified = simplify_complex_name(complex_name)
+            if simplified != complex_name:
+                logger.info(f"find_place retry with simplified name: '{simplified}'")
+                candidates = _find_place(simplified)
+
+        # Strategy 3: geocode fallback
+        if not candidates:
+            logger.info(f"find_place failed — falling back to geocode for '{complex_name}'")
+            try:
+                geo_url = "https://maps.googleapis.com/maps/api/geocode/json"
+                geo_resp = requests.get(geo_url, params={"address": complex_name, "key": MAPS_API_KEY}, timeout=10)
+                geo_resp.raise_for_status()
+                geo_results = geo_resp.json().get("results", [])
+                if geo_results:
+                    # Synthesise a candidate in find_place format
+                    candidates = [{"geometry": geo_results[0]["geometry"]}]
+                    logger.info(f"Geocode fallback found: {geo_results[0].get('formatted_address')}")
+            except Exception as e:
+                logger.error(f"Geocode fallback failed for '{complex_name}': {e}")
+
+        if not candidates:
+            msg = f"Complex '{complex_name}' not found via find_place or geocode."
+            logger.error(msg)
+            return {"location_name": complex_name, "companies": [], "error": msg}
 
         geometry  = candidates[0].get("geometry", {})
         location  = geometry.get("location", {})
