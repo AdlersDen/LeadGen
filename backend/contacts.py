@@ -51,7 +51,7 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         logger.warning("APOLLO_API_KEY not set. Skipping Apollo.io lookup.")
         return []
 
-    url = "https://api.apollo.io/v1/mixed_people/search"
+    url = "https://api.apollo.io/v1/people/search"
     headers = {
         "Content-Type": "application/json",
         "Cache-Control": "no-cache",
