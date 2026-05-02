@@ -12,12 +12,14 @@ import time
 import hashlib
 import logging
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # --- Simple in-memory cache (hash → result) ---
 _pitch_cache: dict[str, dict] = {}
@@ -68,7 +70,7 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
     """
     Main entry point for Module 4.
     Returns {"subject": str, "body": str}.
-    Falls back to a static template if the API is unavailable or quota is exhausted.
+    Tries Groq first, falls back to Gemini, then falls back to a static template.
     """
     key = _cache_key(contact_name, role, company_name)
 
@@ -77,48 +79,84 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
         logger.info(f"Cache hit for pitch: {contact_name} @ {company_name}")
         return _pitch_cache[key]
 
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not set. Using fallback template.")
+    if not GROQ_API_KEY and not GEMINI_API_KEY:
+        logger.warning("No API keys set. Using fallback template.")
         return _fallback_pitch(contact_name, role, company_name)
 
     # --- Rate limit delay (PRD §6.4) ---
     logger.info(f"Generating pitch for {contact_name} @ {company_name}. Waiting {RATE_LIMIT_DELAY_SECONDS}s...")
     time.sleep(RATE_LIMIT_DELAY_SECONDS)
 
-    try:
-        import google.generativeai as genai
-        import json
+    prompt = _build_prompt(contact_name, role, company_name)
+    pitch = None
 
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash-lite",  # PRD §6.4 — was incorrectly gemini-1.5-flash
-            generation_config={
-                "response_mime_type": "application/json",
-                "temperature": 0.7,
-                "max_output_tokens": 400,
-            },
-        )
+    # Try Groq first
+    if GROQ_API_KEY:
+        try:
+            from groq import Groq
+            client = Groq(api_key=GROQ_API_KEY)
+            
+            completion = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=400,
+                response_format={"type": "json_object"}
+            )
+            
+            response_text = completion.choices[0].message.content
+            result = json.loads(response_text)
+            subject = result.get("subject", "")
+            body = result.get("body", "")
 
-        prompt = _build_prompt(contact_name, role, company_name)
-        response = model.generate_content(prompt)
+            if not subject or not body:
+                raise ValueError("Groq returned an empty subject or body.")
 
-        result = json.loads(response.text)
-        subject = result.get("subject", "")
-        body = result.get("body", "")
+            pitch = {"subject": subject, "body": body}
+            logger.info("Successfully generated pitch using Groq.")
+            
+        except Exception as e:
+            logger.error(f"Groq pitch generation failed: {e}. Falling back to Gemini...")
 
-        if not subject or not body:
-            raise ValueError("Gemini returned an empty subject or body.")
+    # Fallback to Gemini
+    if not pitch and GEMINI_API_KEY:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=GEMINI_API_KEY)
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash-lite",
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0.7,
+                    "max_output_tokens": 400,
+                },
+            )
 
-        pitch = {"subject": subject, "body": body}
+            response = model.generate_content(prompt)
+            result = json.loads(response.text)
+            subject = result.get("subject", "")
+            body = result.get("body", "")
 
-        # Store in cache
-        _pitch_cache[key] = pitch
-        logger.info(f"Pitch generated and cached for {contact_name} @ {company_name}")
-        return pitch
+            if not subject or not body:
+                raise ValueError("Gemini returned an empty subject or body.")
 
-    except Exception as e:
-        logger.error(f"Gemini pitch generation failed: {e}. Using fallback.")
-        return _fallback_pitch(contact_name, role, company_name)
+            pitch = {"subject": subject, "body": body}
+            logger.info("Successfully generated pitch using Gemini.")
+            
+        except Exception as e:
+            logger.error(f"Gemini pitch generation failed: {e}.")
+
+    # Fallback to static template
+    if not pitch:
+        logger.warning("All AI providers failed. Using fallback template.")
+        pitch = _fallback_pitch(contact_name, role, company_name)
+
+    # Store in cache
+    _pitch_cache[key] = pitch
+    logger.info(f"Pitch cached for {contact_name} @ {company_name}")
+    return pitch
 
 
 def _fallback_pitch(contact_name: str, role: str, company_name: str) -> dict:
