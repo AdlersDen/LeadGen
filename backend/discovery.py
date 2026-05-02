@@ -176,6 +176,18 @@ def _fetch_text_search(query: str) -> list:
     return all_results
 
 
+JUNK_NAME_PATTERNS = [
+    "internal road", "gate ", "entrance", "exit",
+    "parking lot", "bus stop", "metro station",
+    "food court", "canteen", "cafeteria", "atm"
+]
+
+
+def _is_junk_listing(name: str) -> bool:
+    name_lower = name.lower()
+    return any(pattern in name_lower for pattern in JUNK_NAME_PATTERNS)
+
+
 def _is_b2b_company(place: dict) -> bool:
     """
     PRD §6.1 filtering — returns True only if the place looks corporate.
@@ -379,7 +391,7 @@ def discover_companies(
                 dropped += 1
                 continue
             dist = haversine_distance(cx_lat, cx_lng, p_lat, p_lng)
-            if dist <= radius_m:
+            if dist <= radius_m * 0.80:
                 inside_places.append(p)
             else:
                 dropped += 1
@@ -388,9 +400,12 @@ def discover_companies(
             f"Haversine filter: {len(inside_places)} inside radius, {dropped} dropped outside '{complex_name}'"
         )
 
-        # Step 5: Apply corporate / B2B filter
+        # Step 5: Apply junk filter then corporate / B2B filter
         all_places = inside_places
-        b2b_places = [p for p in all_places if _is_b2b_company(p)]
+        b2b_places = [
+            p for p in all_places
+            if not _is_junk_listing(p.get("name", "")) and _is_b2b_company(p)
+        ]
         logger.info(
             f"B2B filter: {len(all_places)} inside boundary, {len(b2b_places)} corporate for '{complex_name}'"
         )
