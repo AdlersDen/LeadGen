@@ -22,10 +22,20 @@ HUNTER_API_KEY = os.getenv("HUNTER_API_KEY")
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
 
 # PRD §6.2 — Target roles in priority order
-TARGET_ROLE_KEYWORDS = [
-    "hr", "human resource", "chro", "people",
-    "marketing", "cmo", "brand", "growth",
-    "admin", "procurement", "office manager", "facility",
+TIER_1_KEYWORDS = [
+    "hr", "human resource", "chro", "people", "culture", "employee experience", 
+    "employee engagement", "reward", "benefit", "marketing", "cmo", "brand", 
+    "growth", "admin", "office manager", "procurement", "purchase", "vendor"
+]
+
+TIER_2_KEYWORDS = [
+    "operation", "coo", "chief operating officer", "workplace", "facility", 
+    "facilities", "business development", "bd", "client success", "customer success", 
+    "communication", "pr", "public relation", "sales", "cro", "chief revenue officer"
+]
+
+TIER_3_KEYWORDS = [
+    "ceo", "founder", "owner", "managing director", "md", "director"
 ]
 
 # PRD §6.3 — Minimum Hunter.io confidence score
@@ -42,11 +52,11 @@ def extract_root_domain(url: str) -> str:
 def _role_priority(title: str) -> int:
     """Return priority score for a role title (lower = higher priority)."""
     title_lower = title.lower()
-    if any(k in title_lower for k in ["hr", "human resource", "chro", "people"]):
+    if any(k in title_lower for k in TIER_1_KEYWORDS):
         return 1
-    if any(k in title_lower for k in ["marketing", "cmo", "brand", "growth"]):
+    if any(k in title_lower for k in TIER_2_KEYWORDS):
         return 2
-    if any(k in title_lower for k in ["admin", "procurement", "office manager", "facility"]):
+    if any(k in title_lower for k in TIER_3_KEYWORDS):
         return 3
     return 99  # Not a target role
 
@@ -72,6 +82,10 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
             "HR Manager", "Head of HR", "CHRO", "VP People", "People Manager",
             "Marketing Manager", "CMO", "Marketing Head", "Head of Marketing",
             "Admin Manager", "Procurement Head", "Office Manager", "Admin Head",
+            "Head of Culture", "Employee Experience", "Total Rewards", "VP Sales",
+            "CRO", "COO", "Head of Operations", "Workplace Experience",
+            "Facilities Manager", "Business Development", "Customer Success", 
+            "PR Head", "CEO", "Founder", "Managing Director"
         ],
         "page": 1,
         "per_page": 10,
