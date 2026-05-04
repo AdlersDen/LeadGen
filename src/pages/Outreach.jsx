@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
 import {
-  Mail, Send, Loader2, Sparkles, Search, Eye,
-  CheckCircle2, AlertCircle, ChevronDown, X,
+  Mail, Send, Loader2, Sparkles, Search, CheckCircle2, 
+  X, AlertCircle, Building2, Eye, User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,474 +11,515 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { toast } from 'sonner';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 
-// ─── Searchable Contact Combobox ──────────────────────────────────────────────
-function ContactCombobox({ contacts, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-
-  const emailContacts = contacts.filter((c) => c.email || c['Email']);
-
-  const filtered = useMemo(() => {
-    if (!query) return emailContacts;
-    const q = query.toLowerCase();
-    return emailContacts.filter((c) => {
-      const name    = (c.full_name    || c['Full Name']    || '').toLowerCase();
-      const company = (c.company_name || c['Company Name'] || '').toLowerCase();
-      const email   = (c.email        || c['Email']        || '').toLowerCase();
-      return name.includes(q) || company.includes(q) || email.includes(q);
-    });
-  }, [query, contacts]);
-
-  const selected = emailContacts.find(
-    (c) => (c.id || c['ID']) === value
-  );
-
-  const handleSelect = (c) => {
-    onChange(c.id || c['ID']);
-    setQuery('');
-    setOpen(false);
-  };
-
-  const handleClear = (e) => {
-    e.stopPropagation();
-    onChange('');
-    setQuery('');
-  };
-
-  return (
-    <div className="relative">
-      {/* Trigger */}
-      <button
-        type="button"
-        className="w-full flex items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        id="contact-combobox-trigger"
-      >
-        {selected ? (
-          <span className="truncate">
-            {selected.full_name || selected['Full Name']}
-            <span className="text-muted-foreground ml-1.5 text-xs">
-              — {selected.company_name || selected['Company Name']}
-            </span>
-          </span>
-        ) : (
-          <span className="text-muted-foreground">Select a contact…</span>
-        )}
-        <span className="flex items-center gap-1 flex-shrink-0 ml-2">
-          {selected && (
-            <X
-              className="w-3 h-3 text-muted-foreground hover:text-foreground"
-              onClick={handleClear}
-            />
-          )}
-          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
-        </span>
-      </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div
-          className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg"
-          role="listbox"
-          id="contact-combobox-list"
-        >
-          {/* Search input */}
-          <div className="p-2 border-b border-border">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <input
-                autoFocus
-                className="w-full pl-8 pr-3 py-1.5 text-sm bg-muted rounded border-0 outline-none focus:ring-1 focus:ring-ring"
-                placeholder={`Search ${emailContacts.length} contacts…`}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                id="contact-combobox-search"
-              />
-            </div>
-          </div>
-
-          {/* Results */}
-          <ul className="max-h-60 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <li className="px-3 py-4 text-center text-sm text-muted-foreground">
-                No contacts match "{query}"
-              </li>
-            ) : (
-              filtered.map((c, i) => {
-                const id    = c.id    || c['ID'] || i;
-                const name  = c.full_name    || c['Full Name']    || '—';
-                const co    = c.company_name || c['Company Name'] || '';
-                const email = c.email        || c['Email']        || '';
-                const isSelected = id === value;
-
-                return (
-                  <li
-                    key={id}
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`px-3 py-2 cursor-pointer flex items-center gap-2 hover:bg-muted transition-colors ${isSelected ? 'bg-muted' : ''}`}
-                    onClick={() => handleSelect(c)}
-                  >
-                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-xs font-bold text-primary">
-                      {name[0]?.toUpperCase() || '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{co} · {email}</p>
-                    </div>
-                    {isSelected && <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />}
-                  </li>
-                );
-              })
-            )}
-          </ul>
-
-          {/* Footer count */}
-          <div className="px-3 py-1.5 border-t border-border">
-            <p className="text-[11px] text-muted-foreground">
-              {filtered.length} of {emailContacts.length} contacts with email
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Outreach() {
-  const [search, setSearch]                 = useState('');
-  const [showCompose, setShowCompose]       = useState(false);
-  const [selectedContactId, setSelectedContactId] = useState('');
-  const [generatedPitch, setGeneratedPitch] = useState({ subject: '', body: '' });
-  const [previewLog, setPreviewLog]         = useState(null);
-  const queryClient                         = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showCompose, setShowCompose] = useState(false);
+  const [pitchData, setPitchData] = useState({}); 
+  const [isSendingAll, setIsSendingAll] = useState(false);
+  const [sendingProgress, setSendingProgress] = useState(0);
 
-  const { data: logs = [], isLoading } = useQuery({
-    queryKey: ['outreach'],
-    queryFn: () => apiClient.get('/outreach'),
-  });
+  const abortControllerRef = useRef(null);
+  const queryClient = useQueryClient();
 
-  const { data: contacts = [] } = useQuery({
+  // ── Data Fetching ─────────────────────────────────────────────────────────
+
+  const { data: contacts = [], isLoading: isContactsLoading } = useQuery({
     queryKey: ['contacts'],
     queryFn: () => apiClient.get('/contacts'),
   });
 
-  // -- 90-day cooldown status map (email -> bool) --
+  const { data: logs = [] } = useQuery({
+    queryKey: ['outreach'],
+    queryFn: () => apiClient.get('/outreach'),
+  });
+
   const { data: cooldownMap = {} } = useQuery({
     queryKey: ['cooldown-status'],
     queryFn: () => apiClient.get('/contacts/cooldown-status'),
     staleTime: 60_000,
   });
 
-  const generatePitchMutation = useMutation({
-    mutationFn: async (contactId) => {
-      const contact = contacts.find((c) => (c.id || c['ID']) === contactId);
-      if (!contact) throw new Error('Contact not found');
-      return apiClient.post('/pitches/generate', {
-        contact_name: contact.full_name || contact['Full Name'],
-        role:         contact.role      || contact['Role'],
-        company_name: contact.company_name || contact['Company Name'],
-      });
-    },
-    onSuccess: (data) => setGeneratedPitch({ subject: data.subject, body: data.body }),
-    onError:   (err)  => toast.error(err.message || 'Pitch generation failed'),
-  });
+  // ── Helper derived data ───────────────────────────────────────────────────
 
-  const sendEmailMutation = useMutation({
-    mutationFn: async () => {
-      const contact = contacts.find((c) => (c.id || c['ID']) === selectedContactId);
-      if (!contact) throw new Error('Contact not found');
-      const email = contact.email || contact['Email'];
-      if (!email) throw new Error('This contact has no email address');
-      return apiClient.post('/outreach/send', {
-        contact_id:    contact.id    || contact['ID'],
-        contact_name:  contact.full_name || contact['Full Name'],
-        contact_email: email,
-        company_name:  contact.company_name || contact['Company Name'],
-        subject: generatedPitch.subject,
-        body:    generatedPitch.body,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['outreach'] });
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      queryClient.invalidateQueries({ queryKey: ['cooldown-status'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['runs'] });
-      setShowCompose(false);
-      setGeneratedPitch({ subject: '', body: '' });
-      setSelectedContactId('');
-      toast.success('Email sent successfully.');
-    },
-    onError: (err) => toast.error(err.message || 'Failed to send email'),
-  });
+  const validContacts = useMemo(() => contacts.filter(c => c.email || c['Email']), [contacts]);
 
-  const filtered = logs.filter((l) => {
-    const name    = l.contact_name  || l['Contact Name'] || '';
-    const company = l.company_name  || l['Company Name'] || '';
-    const email   = l.contact_email || l['Contact Email'] || '';
-    return (
-      !search ||
-      name.toLowerCase().includes(search.toLowerCase()) ||
-      company.toLowerCase().includes(search.toLowerCase()) ||
-      email.toLowerCase().includes(search.toLowerCase())
-    );
-  });
+  const filteredContacts = useMemo(() => {
+    if (!search) return validContacts;
+    const q = search.toLowerCase();
+    return validContacts.filter(c => {
+      const name = (c.full_name || c['Full Name'] || '').toLowerCase();
+      const comp = (c.company_name || c['Company Name'] || '').toLowerCase();
+      const em   = (c.email || c['Email'] || '').toLowerCase();
+      return name.includes(q) || comp.includes(q) || em.includes(q);
+    });
+  }, [search, validContacts]);
 
-  const resetCompose = () => {
-    setGeneratedPitch({ subject: '', body: '' });
-    setSelectedContactId('');
+  // Determine selectable rows (not in cooldown)
+  const selectableIds = useMemo(() => {
+    return filteredContacts.filter(c => {
+      const em = (c.email || c['Email'] || '').trim();
+      return !cooldownMap[em];
+    }).map(c => c.id || c['ID']);
+  }, [filteredContacts, cooldownMap]);
+
+  const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
+
+  const toggleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedIds(new Set(selectableIds));
+    } else {
+      setSelectedIds(new Set());
+    }
   };
 
-  // Pre-compute selected contact + cooldown status safely
-  const selectedContact = selectedContactId
-    ? contacts.find((c) => (c.id || c['ID']) === selectedContactId) || null
-    : null;
-  const selectedEmail = (selectedContact?.email || selectedContact?.['Email'] || '').trim();
-  const selectedInCooldown = !!(selectedEmail && cooldownMap && cooldownMap[selectedEmail]);
-  const canSend = !sendEmailMutation.isPending && !!(generatedPitch.body || '').trim() && !selectedInCooldown;
+  const toggleOne = (checked, id) => {
+    const next = new Set(selectedIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+  };
+
+  // ── Fetch Pitches Sequentially on Modal Open ──────────────────────────────
+
+  useEffect(() => {
+    if (!showCompose || selectedIds.size === 0) return;
+
+    abortControllerRef.current = new AbortController();
+    const ids = Array.from(selectedIds);
+
+    const fetchPitches = async () => {
+      for (const id of ids) {
+        if (abortControllerRef.current?.signal.aborted) break;
+
+        const contact = validContacts.find(c => (c.id || c['ID']) === id);
+        if (!contact) continue;
+
+        // Skip if already fetched
+        setPitchData(prev => {
+          if (prev[id]) return prev;
+          return { ...prev, [id]: { loading: true } };
+        });
+
+        try {
+          const payload = {
+            contact_name: contact.full_name || contact['Full Name'],
+            role: contact.role || contact['Role'],
+            company_name: contact.company_name || contact['Company Name'],
+          };
+          
+          const res = await apiClient.post('/pitches/generate', payload);
+          
+          if (!abortControllerRef.current?.signal.aborted) {
+            setPitchData(prev => ({
+              ...prev,
+              [id]: {
+                loading: false,
+                ai_pitch: res.ai_pitch,
+                predefined_pitch: res.predefined_pitch,
+                choice: 'predefined',
+                final_subject: res.predefined_pitch.subject,
+                final_body: res.predefined_pitch.body,
+                status: 'pending' // pending, sending, sent, error
+              }
+            }));
+          }
+          // Slight delay to be kind to Gemini API limits
+          await new Promise(r => setTimeout(r, 1000));
+        } catch (err) {
+          if (!abortControllerRef.current?.signal.aborted) {
+            setPitchData(prev => ({
+              ...prev,
+              [id]: { loading: false, error: err.message || 'Failed to generate pitch' }
+            }));
+          }
+        }
+      }
+    };
+
+    fetchPitches();
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [showCompose, selectedIds, validContacts]);
+
+
+  // ── Handle Sending ────────────────────────────────────────────────────────
+
+  const handleSendAll = async () => {
+    setIsSendingAll(true);
+    setSendingProgress(0);
+    const ids = Array.from(selectedIds);
+    let sentCount = 0;
+
+    for (const id of ids) {
+      const data = pitchData[id];
+      if (!data || data.loading || data.error || data.status === 'sent') {
+        setSendingProgress(p => p + 1);
+        continue;
+      }
+
+      const contact = validContacts.find(c => (c.id || c['ID']) === id);
+      const email = contact.email || contact['Email'];
+
+      setPitchData(prev => ({ ...prev, [id]: { ...prev[id], status: 'sending' } }));
+
+      try {
+        await apiClient.post('/outreach/send', {
+          contact_id: id,
+          contact_name: contact.full_name || contact['Full Name'],
+          contact_email: email,
+          company_name: contact.company_name || contact['Company Name'],
+          subject: data.final_subject,
+          body: data.final_body,
+        });
+        
+        setPitchData(prev => ({ ...prev, [id]: { ...prev[id], status: 'sent' } }));
+        sentCount++;
+        
+        // Invalidate immediately so background badges update
+        queryClient.invalidateQueries({ queryKey: ['outreach'] });
+        queryClient.invalidateQueries({ queryKey: ['cooldown-status'] });
+      } catch (err) {
+        setPitchData(prev => ({ ...prev, [id]: { ...prev[id], status: 'error', error_msg: err.message } }));
+        toast.error(`Failed to send to ${email}: ${err.message}`);
+      }
+
+      setSendingProgress(p => p + 1);
+      
+      // 5-second delay between emails as requested (if not the last one)
+      if (id !== ids[ids.length - 1]) {
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+
+    setIsSendingAll(false);
+    if (sentCount > 0) {
+      toast.success(`Successfully sent ${sentCount} emails.`);
+      setSelectedIds(new Set()); // clear selection after success
+      setTimeout(() => setShowCompose(false), 1500);
+    }
+  };
+
+
+  // ── Render Helpers ────────────────────────────────────────────────────────
+
+  const updatePitch = (id, field, value) => {
+    setPitchData(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }));
+  };
+
+  const setChoice = (id, choice) => {
+    const data = pitchData[id];
+    if (!data) return;
+    const source = choice === 'ai' ? data.ai_pitch : data.predefined_pitch;
+    setPitchData(prev => ({
+      ...prev,
+      [id]: { ...data, choice, final_subject: source.subject, final_body: source.body }
+    }));
+  };
 
   return (
     <div className="space-y-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Outreach</h1>
-          <p className="text-muted-foreground text-sm mt-1">{logs.length} emails tracked</p>
+          <h1 className="text-2xl font-bold tracking-tight">Outreach Compose</h1>
+          <p className="text-muted-foreground text-sm mt-1">{validContacts.length} contacts available for outreach</p>
         </div>
 
-        <Dialog
-          open={showCompose}
-          onOpenChange={(open) => { setShowCompose(open); if (!open) resetCompose(); }}
-        >
+        <Dialog open={showCompose} onOpenChange={(open) => {
+          if (!open && isSendingAll) return; // prevent closing while sending
+          setShowCompose(open);
+          if (!open) setPitchData({}); // reset state on close
+        }}>
           <DialogTrigger asChild>
-            <Button className="gap-2" id="compose-email-btn">
-              <Mail className="w-4 h-4" /> Compose Email
+            <Button className="gap-2" disabled={selectedIds.size === 0}>
+              <Mail className="w-4 h-4" /> 
+              Send to Selected ({selectedIds.size})
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>AI-Powered Outreach</DialogTitle>
-              <DialogDescription>
-                Pick a contact, generate a personalized pitch via Gemini AI, edit if needed, and send � all in one place.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 pt-2">
-
-              {/* ── Searchable contact picker ── */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Contact</label>
-                <ContactCombobox
-                  contacts={contacts}
-                  value={selectedContactId}
-                  onChange={(id) => {
-                    setSelectedContactId(id);
-                    setGeneratedPitch({ subject: '', body: '' });
-                  }}
-                />
+          <DialogContent className="max-w-6xl w-[90vw] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+            <div className="p-6 border-b border-border flex justify-between items-center bg-muted/30">
+              <div>
+                <DialogTitle className="text-xl">Review & Send Outreach</DialogTitle>
+                <DialogDescription className="mt-1">
+                  Review the predefined and AI-generated pitches for your {selectedIds.size} selected contacts.
+                </DialogDescription>
               </div>
+            </div>
 
-              {/* Cooldown warning for selected contact */}
-              {selectedInCooldown && (
-                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  <span>⏱ This contact was already emailed within the last 90 days. Sending is disabled.</span>
-                </div>
-              )}
+            {/* Scrollable List of Contacts */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-muted/10">
+              {Array.from(selectedIds).map((id) => {
+                const contact = validContacts.find(c => (c.id || c['ID']) === id);
+                if (!contact) return null;
+                const data = pitchData[id];
 
-              {selectedContactId && !generatedPitch.subject && (
-                <Button
-                  variant="outline"
-                  className="w-full gap-2"
-                  disabled={generatePitchMutation.isPending}
-                  onClick={() => generatePitchMutation.mutate(selectedContactId)}
-                  id="generate-pitch-btn"
-                >
-                  {generatePitchMutation.isPending
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating via Gemini…</>
-                    : <><Sparkles className="w-4 h-4" /> Generate AI Pitch</>}
-                </Button>
-              )}
+                return (
+                  <div key={id} className={`bg-card border rounded-xl shadow-sm overflow-hidden transition-all ${data?.status === 'sent' ? 'opacity-50 grayscale' : ''}`}>
+                    {/* Header */}
+                    <div className="bg-muted/40 px-5 py-3 border-b flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-xs font-bold text-primary">
+                          {(contact.full_name || contact['Full Name'] || '?')[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm">{contact.full_name || contact['Full Name']}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {contact.role || contact['Role']} at {contact.company_name || contact['Company Name']} · {contact.email || contact['Email']}
+                          </p>
+                        </div>
+                      </div>
+                      <div>
+                        {data?.status === 'sending' && <Badge className="bg-amber-500"><Loader2 className="w-3 h-3 animate-spin mr-1"/> Sending</Badge>}
+                        {data?.status === 'sent' && <Badge className="bg-emerald-500"><CheckCircle2 className="w-3 h-3 mr-1"/> Sent</Badge>}
+                        {data?.status === 'error' && <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1"/> Error</Badge>}
+                      </div>
+                    </div>
 
-              {generatedPitch.subject && (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Subject</label>
-                    <Input
-                      id="pitch-subject"
-                      value={generatedPitch.subject}
-                      onChange={(e) => setGeneratedPitch((p) => ({ ...p, subject: e.target.value }))}
-                    />
+                    {/* Content */}
+                    <div className="p-5">
+                      {!data || data.loading ? (
+                        <div className="py-12 flex flex-col items-center justify-center text-muted-foreground space-y-3">
+                          <Loader2 className="w-8 h-8 animate-spin text-primary/50" />
+                          <p className="text-sm font-medium">Generating pitches...</p>
+                        </div>
+                      ) : data.error ? (
+                        <div className="py-6 text-center text-destructive flex flex-col items-center">
+                          <AlertCircle className="w-8 h-8 mb-2" />
+                          <p className="text-sm">{data.error}</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          
+                          {/* Left Panel: Options */}
+                          <div className="space-y-4">
+                            <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                              1. Select Base Template
+                            </h3>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Predefined Option */}
+                              <div className={`border rounded-lg p-4 cursor-pointer transition-all ${data.choice === 'predefined' ? 'ring-2 ring-primary border-primary bg-primary/5' : 'hover:border-foreground/30'}`}
+                                   onClick={() => setChoice(id, 'predefined')}>
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="font-semibold text-sm">Predefined Template</span>
+                                  {data.choice === 'predefined' && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                                </div>
+                                <p className="text-xs text-muted-foreground line-clamp-4">{data.predefined_pitch.body}</p>
+                              </div>
+
+                              {/* AI Option */}
+                              <div className={`border rounded-lg p-4 cursor-pointer transition-all ${data.choice === 'ai' ? 'ring-2 ring-primary border-primary bg-primary/5' : 'hover:border-foreground/30'}`}
+                                   onClick={() => setChoice(id, 'ai')}>
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className="font-semibold text-sm flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> AI Generated</span>
+                                  {data.choice === 'ai' && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                                </div>
+                                <p className="text-xs text-muted-foreground line-clamp-4">{data.ai_pitch.body}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right Panel: Editor */}
+                          <div className="space-y-4">
+                             <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                              2. Review & Edit
+                            </h3>
+                            <div className="space-y-3">
+                              <Input 
+                                value={data.final_subject} 
+                                onChange={e => updatePitch(id, 'final_subject', e.target.value)}
+                                className="font-medium"
+                                placeholder="Subject line"
+                                disabled={data.status === 'sending' || data.status === 'sent'}
+                              />
+                              <Textarea 
+                                value={data.final_body}
+                                onChange={e => updatePitch(id, 'final_body', e.target.value)}
+                                rows={8}
+                                className="resize-none text-sm"
+                                placeholder="Email body"
+                                disabled={data.status === 'sending' || data.status === 'sent'}
+                              />
+                            </div>
+                          </div>
+
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Body</label>
-                    <Textarea
-                      id="pitch-body"
-                      value={generatedPitch.body}
-                      onChange={(e) => setGeneratedPitch((p) => ({ ...p, body: e.target.value }))}
-                      rows={8}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1 gap-2"
-                      disabled={generatePitchMutation.isPending}
-                      onClick={() => generatePitchMutation.mutate(selectedContactId)}
-                      id="regenerate-pitch-btn"
-                    >
-                      <Sparkles className="w-4 h-4" /> Regenerate
-                    </Button>
-                    <Button
-                      className="flex-1 gap-2"
-                      disabled={!canSend}
-                      onClick={() => sendEmailMutation.mutate()}
-                      id="send-email-btn"
-                    >
-                      {sendEmailMutation.isPending
-                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
-                        : <><Send className="w-4 h-4" /> Send via SendGrid</>}
-                    </Button>
-                  </div>
-                </>
-              )}
+                );
+              })}
+            </div>
+
+            {/* Footer Action */}
+            <div className="p-4 border-t border-border bg-background flex justify-between items-center">
+              <div className="text-sm text-muted-foreground">
+                {isSendingAll && (
+                  <span className="flex items-center gap-2">
+                     <Loader2 className="w-4 h-4 animate-spin" />
+                     Sending {sendingProgress + 1} of {selectedIds.size}... (5s delay between sends)
+                  </span>
+                )}
+              </div>
+              <Button 
+                size="lg" 
+                className="gap-2 px-8" 
+                onClick={handleSendAll}
+                disabled={isSendingAll || selectedIds.size === 0}
+              >
+                {isSendingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {isSendingAll ? 'Sending...' : `Send All (${selectedIds.size})`}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* ── Search bar ──────────────────────────────────────────────────── */}
+      {/* ── Search & Filters ────────────────────────────────────────────── */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
-          id="outreach-search"
-          placeholder="Search outreach…"
+          placeholder="Search contacts by name, company, or email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
         />
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────────── */}
+      {/* ── Contacts Table (Checklist) ────────────────────────────────────── */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/50">
-              <TableHead>Contact</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Sent</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array(5).fill(0).map((_, i) => (
-                <TableRow key={i}>
-                  {Array(6).fill(0).map((_, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-24" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : filtered.length === 0 ? (
+        <div className="px-4 py-3 bg-muted/40 border-b border-border flex items-center gap-3">
+          <Checkbox
+            id="select-all"
+            checked={allSelected}
+            onCheckedChange={toggleSelectAll}
+            disabled={isContactsLoading || selectableIds.length === 0}
+          />
+          <label htmlFor="select-all" className="text-sm font-medium cursor-pointer select-none">
+            {isContactsLoading
+              ? 'Loading contacts...'
+              : `Select All (${selectableIds.length} eligible)`}
+          </label>
+        </div>
+
+        <div className="max-h-[600px] overflow-y-auto">
+          <Table>
+            <TableHeader className="sticky top-0 bg-muted/90 backdrop-blur z-10 shadow-sm">
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
-                  No outreach emails yet
-                </TableCell>
+                <TableHead className="w-12"></TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Confidence</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ) : (
-              filtered.map((log, idx) => {
-                const id        = log.id || log['ID'] || idx;
-                const name      = log.contact_name  || log['Contact Name'];
-                const email     = log.contact_email || log['Contact Email'];
-                const company   = log.company_name  || log['Company Name'];
-                const subject   = log.subject       || log['Subject'];
-                const status    = log.status        || log['Status'];
-                const timestamp = log.sent_date     || log['Timestamp'] || log.created_date;
-
-                return (
-                  <TableRow key={id} className="hover:bg-muted/30">
-                    <TableCell>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-sm">{name || email}</p>
-                          {email && cooldownMap[email] && (
-                            <span
-                              title="Already contacted within 90 days — outreach skipped."
-                              className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 cursor-help border border-amber-200 flex-shrink-0"
-                            >
-                              ⏱ In Cooldown
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">{email}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{company}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                      {subject}
-                    </TableCell>
-                    <TableCell><StatusBadge status={status} /></TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {(() => {
-                        if (!timestamp) return '—';
-                        try {
-                          const d = new Date(timestamp);
-                          return isNaN(d.getTime()) ? '—' : format(d, 'MMM d, h:mm a');
-                        } catch { return '—'; }
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => setPreviewLog(log)} aria-label="Preview email">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
+            </TableHeader>
+            <TableBody>
+              {isContactsLoading ? (
+                Array(5).fill(0).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array(6).fill(0).map((_, j) => (
+                      <TableCell key={j}><Skeleton className="h-4 w-24" /></TableCell>
+                    ))}
                   </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                ))
+              ) : filteredContacts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                    No valid contacts found. Extract contacts first.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredContacts.map((contact, idx) => {
+                  const id         = contact.id           || contact['ID']             || idx;
+                  const fullName   = contact.full_name    || contact['Full Name']      || '';
+                  const role       = contact.role         || contact['Role']           || '';
+                  const company    = contact.company_name || contact['Company Name']   || '';
+                  const email      = contact.email        || contact['Email']          || '';
+                  const confidence = contact.confidence_score || contact['Confidence Score'];
+                  const status     = contact.status       || contact['Status']         || '';
+                  
+                  const emTrimmed  = email.trim();
+                  const isCooldown = !!cooldownMap[emTrimmed];
 
-      {/* ── Email Preview Dialog ─────────────────────────────────────────── */}
-      <Dialog open={!!previewLog} onOpenChange={(open) => !open && setPreviewLog(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Email Preview</DialogTitle>
-            <DialogDescription>
-              Preview the exact outreach email content saved in the outreach log.
-            </DialogDescription>
-          </DialogHeader>
-          {previewLog && (
-            <div className="space-y-4 pt-2">
-              <div>
-                <p className="text-xs text-muted-foreground">To</p>
-                <p className="text-sm font-medium">
-                  {previewLog.contact_name || previewLog['Contact Name']} &lt;
-                  {previewLog.contact_email || previewLog['Contact Email']}&gt;
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Subject</p>
-                <p className="text-sm font-medium">{previewLog.subject || previewLog['Subject']}</p>
-              </div>
-              <div className="border-t pt-4">
-                <p className="text-sm whitespace-pre-wrap">
-                  {previewLog.body || previewLog['AI Pitch Body']}
-                </p>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+                  // Find log to show date
+                  const matchedLog = isCooldown ? logs.find(l => (l.contact_email || l['Contact Email']) === emTrimmed) : null;
+                  const logDate = matchedLog ? (matchedLog.sent_date || matchedLog['Timestamp'] || matchedLog.created_date) : null;
+
+                  return (
+                    <TableRow key={id} className={`hover:bg-muted/30 ${isCooldown ? 'opacity-60 bg-muted/10' : ''}`}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.has(id)}
+                          onCheckedChange={(checked) => toggleOne(checked, id)}
+                          disabled={isCooldown}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-accent">
+                              {fullName?.[0]?.toUpperCase() || '?'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-sm block">{fullName || '—'}</span>
+                            <span className="text-xs text-muted-foreground block">{email}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
+                      <TableCell className="text-sm font-medium">{company || '—'}</TableCell>
+                      <TableCell>
+                        {confidence ? (
+                          <span
+                            className={`text-xs font-semibold ${
+                              confidence >= 70 ? 'text-emerald-600'
+                              : confidence >= 50 ? 'text-amber-600'
+                              : 'text-red-600'
+                            }`}
+                          >
+                            {confidence}%
+                          </span>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {isCooldown ? (
+                           <div className="inline-flex flex-col gap-1">
+                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">
+                               ⏱ Already Sent
+                             </span>
+                             {logDate && (
+                               <span className="text-[10px] text-muted-foreground ml-1">
+                                 {format(new Date(logDate), 'MMM d, yyyy')}
+                               </span>
+                             )}
+                           </div>
+                        ) : (
+                           <StatusBadge status={status} />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </div>
   );
 }

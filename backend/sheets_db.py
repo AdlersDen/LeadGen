@@ -29,6 +29,7 @@ SHEET_HEADERS = {
         "Contacts Found", "Emails Sent", "Status", "Timestamp",
     ],
     "Blocklist": ["Email", "Timestamp"],
+    "Email Templates": ["Category", "Subject", "Body"],
 }
 
 class SheetsDB:
@@ -543,6 +544,51 @@ class SheetsDB:
             return False
         emails = {v.strip().lower() for v in ws.col_values(1) if v.strip()}
         return email.strip().lower() in emails
+
+    # --- Email Templates Tab ---
+    def get_email_templates(self) -> dict:
+        """Fetches the predefined templates and maps them by role category."""
+        records = self._get_cached_records("Email Templates")
+        templates = {}
+        for r in records:
+            cat = str(r.get("Category", "")).strip().lower()
+            if cat:
+                templates[cat] = {
+                    "subject": r.get("Subject", ""),
+                    "body": r.get("Body", "")
+                }
+        return templates
+
+    def detect_role_category(self, role_title: str) -> str:
+        """Maps a role string to one of 8 categories using keyword matching."""
+        if not role_title:
+            return "general"
+            
+        role_lower = role_title.lower()
+        
+        # 1. HR
+        if any(k in role_lower for k in ["hr", "human resource", "chro", "people", "culture", "employee experience", "employee engagement", "reward", "benefit"]):
+            return "hr"
+        # 2. Marketing
+        if any(k in role_lower for k in ["marketing", "cmo", "brand", "growth", "communication", "pr", "public relation"]):
+            return "marketing"
+        # 3. Admin / Procurement
+        if any(k in role_lower for k in ["admin", "office manager", "procurement", "purchase", "vendor", "facility", "facilities", "workplace"]):
+            return "admin"
+        # 4. Sales
+        if any(k in role_lower for k in ["sales", "cro", "chief revenue officer", "business development", "bd "]):
+            return "sales"
+        # 5. Customer Success
+        if any(k in role_lower for k in ["client success", "customer success"]):
+            return "customer_success"
+        # 6. Operations
+        if any(k in role_lower for k in ["operation", "coo", "chief operating officer"]):
+            return "operations"
+        # 7. Executive
+        if any(k in role_lower for k in ["ceo", "founder", "owner", "managing director", "md", "director"]):
+            return "executive"
+            
+        return "general"
 
 
 # Singleton instance for the app to use

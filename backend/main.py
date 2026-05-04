@@ -552,11 +552,43 @@ async def extract_selected_contacts(req: ExtractSelectedRequest):
 async def generate_pitch_for_contact(req: GeneratePitchRequest):
     """
     Generates a personalized outreach email using Gemini 2.5 Flash-Lite.
-    Implements a 4-second delay and prompt caching as per the PRD.
+    Also fetches predefined email templates and maps them based on role.
     """
     try:
-        pitch = generate_pitch(req.contact_name, req.role, req.company_name)
-        return {"subject": pitch["subject"], "body": pitch["body"]}
+        # Generate AI pitch
+        ai_pitch = generate_pitch(req.contact_name, req.role, req.company_name)
+        
+        # Determine category and fetch predefined template
+        cat = db.detect_role_category(req.role)
+        templates = db.get_email_templates()
+        
+        # Fallback to general if specific category doesn't exist
+        predefined = templates.get(cat) or templates.get("general")
+        
+        # If no templates exist at all, provide a default fallback
+        if not predefined:
+            predefined = {
+                "subject": f"Partnership with {req.company_name}",
+                "body": f"Hi {req.contact_name},\n\nI hope this finds you well. I'm reaching out from Adler's Den, where we specialise in premium corporate gifting and engagement solutions.\n\nAs {req.role} at {req.company_name}, I imagine you're always looking for meaningful ways to boost team morale and client relationships.\n\nWould you be open to a quick 15-minute call this week?\n\nWarm Regards,\nThe Adler's Den Team"
+            }
+            
+        # Replace placeholders safely (use a dict to handle missing keys gracefully)
+        replacements = {
+            "{name}": req.contact_name,
+            "{company}": req.company_name,
+            "{role}": req.role
+        }
+        
+        subject = predefined.get("subject", "")
+        body = predefined.get("body", "")
+        for k, v in replacements.items():
+            subject = subject.replace(k, v)
+            body = body.replace(k, v)
+            
+        return {
+            "ai_pitch": {"subject": ai_pitch["subject"], "body": ai_pitch["body"]},
+            "predefined_pitch": {"subject": subject, "body": body}
+        }
     except Exception as e:
         logger.error(f"Pitch generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Pitch generation failed: {e}")
