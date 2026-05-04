@@ -10,12 +10,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { toast } from 'sonner';
+import RunAlert from '@/components/RunAlert';
 
 export default function Contacts() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [panelOpen, setPanelOpen] = useState(false);
   const [extractProgress, setExtractProgress] = useState(null); // { total, remaining, pct }
+  const [extractionAlert, setExtractionAlert] = useState(null);
   const pollRef = useRef(null);
   const queryClient = useQueryClient();
 
@@ -44,6 +46,7 @@ export default function Contacts() {
     mutationFn: (company_ids) =>
       apiClient.post('/contacts/extract-selected', { company_ids }),
     onMutate: (company_ids) => {
+      setExtractionAlert(null);
       // Start polling progress every 3s
       const total = company_ids.length;
       setExtractProgress({ total, remaining: total, pct: 0 });
@@ -66,6 +69,25 @@ export default function Contacts() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       setSelectedIds(new Set());
+      
+      const queued = data.queued || 0;
+      const skipped_domain = data.skipped_no_domain || 0;
+      const skipped_extracted = data.skipped_already_extracted || 0;
+      
+      let type = 'info';
+      if (queued > 0) type = 'success';
+      else if (queued === 0 && (skipped_domain > 0 || skipped_extracted > 0)) type = 'warning';
+      
+      const message = {
+        type: type,
+        title: queued > 0 ? `Extraction Processed` : 'No Contacts Extracted',
+        body: queued > 0 
+            ? `Successfully processed ${queued} companies for extraction. (Skipped ${skipped_domain} without domain).`
+            : `Skipped all selected companies (No domain: ${skipped_domain}, Already extracted: ${skipped_extracted}).`,
+        action: 'none'
+      };
+      setExtractionAlert(message);
+      
       toast.success(
         `Done! Queued: ${data.queued} · Skipped (no domain): ${data.skipped_no_domain} · Already done: ${data.skipped_already_extracted}`
       );
@@ -142,6 +164,10 @@ export default function Contacts() {
           {panelOpen ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
         </Button>
       </div>
+
+      {extractionAlert && (
+        <RunAlert message={extractionAlert} onClose={() => setExtractionAlert(null)} />
+      )}
 
       {/* ── Extraction panel ─────────────────────────────────────────────── */}
       {panelOpen && (

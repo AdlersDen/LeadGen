@@ -8,6 +8,7 @@ import { MapPin, Search, Building2, Users, Loader2, CheckCircle2, AlertCircle, B
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import RunAlert from '@/components/RunAlert';
 
 // // ─── Global business complex suggestions ─────────────────────────────────────
 const COMPLEXES = [
@@ -142,6 +143,7 @@ export default function Discover() {
   const [discoveredCompanies, setDiscoveredCompanies] = useState([]);
   const [step, setStep]                               = useState('input'); // input | discovering | done
   const [errorMsg, setErrorMsg]                       = useState('');
+  const [runAlert, setRunAlert]                       = useState(null);
 
   const [slowWarning, setSlowWarning] = useState(false);
   const slowTimerRef = useRef(null);
@@ -205,6 +207,7 @@ export default function Discover() {
     mutationFn: async (payload) => {
       setStep('discovering');
       setErrorMsg('');
+      setRunAlert(null);
       setSlowWarning(false);
       // Show slow warning after 25s (Render cold-starts can take ~30s)
       slowTimerRef.current = setTimeout(() => setSlowWarning(true), 25000);
@@ -215,6 +218,24 @@ export default function Discover() {
       setSlowWarning(false);
       setDiscoveredCompanies(data.companies || []);
       setStep('done');
+      
+      const count = data.companies_found || 0;
+      if (count === 0) {
+        setRunAlert({
+          type: "error",
+          title: "0 Companies Discovered",
+          body: `We couldn't find any corporate prospects in ${data.location_name || 'this area'}. Try a different pincode or complex.`,
+          action: "none"
+        });
+      } else {
+        setRunAlert({
+          type: "success",
+          title: `${count} Companies Discovered`,
+          body: `We found ${count} companies in ${data.location_name || 'this area'}. Next, extract their contacts.`,
+          action: "extract"
+        });
+      }
+      
       queryClient.invalidateQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
@@ -261,6 +282,7 @@ export default function Discover() {
     setComplexName('');
     setDiscoveredCompanies([]);
     setErrorMsg('');
+    setRunAlert(null);
     setSearchHint('');
   };
 
@@ -490,6 +512,10 @@ export default function Discover() {
           </div>
         )}
       </div>
+
+      {runAlert && (
+        <RunAlert message={runAlert} onClose={() => setRunAlert(null)} />
+      )}
 
       {/* ── Progress indicator (unchanged) ────────────────────────────── */}
       <AnimatePresence>
