@@ -454,16 +454,18 @@ async def bulk_find_contacts(req: BulkFindContactsRequest):
             raw_contacts = find_contacts(company_name, domain)
             processed_count += 1
             
-            for contact_data in raw_contacts:
-                contact_data["company_name"] = company_name
-                contact_data["status"] = "verified"
-                saved = db.add_contact(contact_data, company_id)
-                if saved:
-                    total_contacts_found += 1
-                    
-            # Update company status to indicate contacts were searched
-            # We don't have a direct row-update function in SheetsDB yet for MVP, 
-            # so we rely on the fact that contacts now exist for this company ID.
+            if raw_contacts:
+                for contact_data in raw_contacts:
+                    contact_data["company_name"] = company_name
+                    contact_data["status"] = "verified"
+                    saved = db.add_contact(contact_data, company_id)
+                    if saved:
+                        total_contacts_found += 1
+                # Update company status to indicate contacts were searched and found
+                db.mark_contacts_extracted_bulk([company_id])
+            else:
+                # No contacts found, update status instead
+                db.mark_company_status(company_id, "no_contacts_found")
             
         except Exception as e:
             logger.error(f"Bulk contact discovery error for {company_name}: {e}")
@@ -518,14 +520,15 @@ async def extract_selected_contacts(req: ExtractSelectedRequest):
             raw_contacts = find_contacts(company_name, domain)
             queued += 1
             
-            for contact_data in raw_contacts:
-                contact_data["company_name"] = company_name
-                contact_data["status"] = "verified"
-                db.add_contact(contact_data, company_id)
-            
-            # If we attempted extraction (even if 0 found), we consider it processed
-            # so we don't keep wasting credits on it.
-            successful_company_ids.append(company_id)
+            if raw_contacts:
+                for contact_data in raw_contacts:
+                    contact_data["company_name"] = company_name
+                    contact_data["status"] = "verified"
+                    db.add_contact(contact_data, company_id)
+                
+                successful_company_ids.append(company_id)
+            else:
+                db.mark_company_status(company_id, "no_contacts_found")
                 
         except Exception as e:
             logger.error(f"Selective contact extraction error for {company_name}: {e}")

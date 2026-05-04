@@ -11,6 +11,8 @@ import requests
 import logging
 import os
 from dotenv import load_dotenv
+import tldextract
+from urllib.parse import urlparse
 from cleaning import clean_contact_data
 
 load_dotenv()
@@ -28,6 +30,13 @@ TARGET_ROLE_KEYWORDS = [
 
 # PRD §6.3 — Minimum Hunter.io confidence score
 MIN_CONFIDENCE = 50
+
+
+def extract_root_domain(url: str) -> str:
+    extracted = tldextract.extract(url)
+    if extracted.domain and extracted.suffix:
+        return f"{extracted.domain}.{extracted.suffix}"
+    return url
 
 
 def _role_priority(title: str) -> int:
@@ -114,9 +123,10 @@ def _search_hunter(domain: str) -> list[dict]:
         logger.warning("HUNTER_API_KEY not set. Skipping Hunter.io lookup.")
         return []
 
+    root_domain = extract_root_domain(domain)
     url = "https://api.hunter.io/v2/domain-search"
     params = {
-        "domain": domain,
+        "domain": root_domain,
         "api_key": HUNTER_API_KEY,
         "limit": 10,
         "type": "personal",

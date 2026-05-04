@@ -163,11 +163,12 @@ class SheetsDB:
         return records
 
     def get_pending_companies(self):
-        """Returns only companies where Contacts Extracted is not 'Yes'."""
+        """Returns only companies where Contacts Extracted is not 'Yes' and status is not 'no_contacts_found'."""
         all_companies = self.get_companies()
         return [
             c for c in all_companies
-            if str(c.get("Contacts Extracted", "")).strip().lower() != "yes"
+            if str(c.get("Contacts Extracted", "")).strip().lower() != "yes" 
+            and str(c.get("Status", "")).strip().lower() != "no_contacts_found"
         ]
 
     def add_company(self, company_data: dict):
@@ -310,6 +311,35 @@ class SheetsDB:
         except Exception as e:
             logger.error(f"Failed to batch update Contacts Extracted: {e}")
 
+    def mark_company_status(self, company_id: str, status: str):
+        """Updates the Status column for a specific company."""
+        ws = self._get_worksheet("Companies")
+        if not ws or not company_id:
+            return
+
+        all_values = ws.get_all_values()
+        if not all_values:
+            return
+
+        headers = all_values[0]
+        if "Status" not in headers or "ID" not in headers:
+            logger.warning("mark_company_status: required columns not found in Companies.")
+            return
+
+        id_col_idx = headers.index("ID")
+        status_col_idx = headers.index("Status") + 1  # 1-based index
+
+        for row_idx, row in enumerate(all_values):
+            if row_idx == 0:
+                continue
+            if len(row) > id_col_idx and row[id_col_idx] == company_id:
+                try:
+                    ws.update_cell(row_idx + 1, status_col_idx, status)
+                    logger.info(f"Updated company {company_id} status to '{status}'.")
+                except Exception as e:
+                    logger.error(f"Failed to update company status: {e}")
+                return
+        logger.warning(f"mark_company_status: company {company_id} not found.")
 
     # --- Contacts Tab ---
     def get_contacts(self):
