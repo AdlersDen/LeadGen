@@ -35,6 +35,9 @@ class SheetsDB:
     def __init__(self):
         self.client = None
         self.doc = None
+        self._ws_cache = {}
+        self._data_cache = {}
+        self._cache_ttl = 15  # seconds
 
     def connect(self):
         """Initializes connection to Google Sheets."""
@@ -82,11 +85,16 @@ class SheetsDB:
 
     def _get_worksheet(self, title: str):
         """Helper to get a worksheet gracefully and ensure headers exist. Creates missing worksheets."""
+        if title in self._ws_cache:
+            return self._ws_cache[title]
+
         if not self.connect():
             return None
+            
         try:
             ws = self.doc.worksheet(title)
             self._ensure_headers(ws, title)
+            self._ws_cache[title] = ws
             return ws
         except gspread.exceptions.WorksheetNotFound:
             logger.info(f"Worksheet '{title}' not found. Creating it...")
@@ -95,6 +103,7 @@ class SheetsDB:
                 headers = SHEET_HEADERS.get(title, ["ID"])
                 ws = self.doc.add_worksheet(title=title, rows="100", cols=str(max(20, len(headers))))
                 self._ensure_headers(ws, title)
+                self._ws_cache[title] = ws
                 return ws
             except Exception as e:
                 logger.error(f"Failed to create worksheet '{title}': {e}")
@@ -138,13 +147,30 @@ class SheetsDB:
         if not headers or not rows:
             return
         ws.append_rows([self._build_row_for_headers(headers, row) for row in rows])
+        
+    def _get_cached_records(self, title: str):
+        import time
+        now = time.time()
+        if title in self._data_cache:
+            data, timestamp = self._data_cache[title]
+            if now - timestamp < self._cache_ttl:
+                return data
+
+        ws = self._get_worksheet(title)
+        if not ws:
+            return []
+            
+        records = ws.get_all_records()
+        self._data_cache[title] = (records, now)
+        return records
+
+    def _invalidate_cache(self, title: str):
+        if title in self._data_cache:
+            del self._data_cache[title]
 
     # --- Companies Tab ---
     def get_companies(self):
-        ws = self._get_worksheet("Companies")
-        if not ws:
-            return []
-        records = ws.get_all_records()
+        records = self._get_cached_records("Companies")
         # ── Column-swap normalizer ────────────────────────────────────────────
         # Older rows written before the contacts_extracted column fix have:
         #   Status          = ISO timestamp  (was Created Date)
@@ -194,6 +220,7 @@ class SheetsDB:
             "Created Date": date_added,
         }
         self._append_record(ws, row_data)
+        self._invalidate_cache("Companies")
 
         company_data["id"] = record_id
         company_data["created_date"] = date_added
@@ -253,6 +280,7 @@ class SheetsDB:
             company_data["created_date"] = date_added
 
         self._append_records(ws, rows)
+        self._invalidate_cache("Companies")
         logger.info(f"Added {len(new_companies)} new companies to Sheets.")
         return new_companies
 
@@ -307,6 +335,7 @@ class SheetsDB:
 
         try:
             ws.batch_update(batch_data)
+            self._invalidate_cache("Companies")
             logger.info(f"Marked {len(rows_to_update)} companies as contacts extracted.")
         except Exception as e:
             logger.error(f"Failed to batch update Contacts Extracted: {e}")
@@ -335,6 +364,7 @@ class SheetsDB:
             if len(row) > id_col_idx and row[id_col_idx] == company_id:
                 try:
                     ws.update_cell(row_idx + 1, status_col_idx, status)
+                    self._invalidate_cache("Companies")
                     logger.info(f"Updated company {company_id} status to '{status}'.")
                 except Exception as e:
                     logger.error(f"Failed to update company status: {e}")
@@ -343,8 +373,7 @@ class SheetsDB:
 
     # --- Contacts Tab ---
     def get_contacts(self):
-        ws = self._get_worksheet("Contacts")
-        return ws.get_all_records() if ws else []
+        return self._get_cached_records("Contacts")
 
     def add_contact(self, contact_data: dict, company_id: str):
         ws = self._get_worksheet("Contacts")
@@ -367,6 +396,7 @@ class SheetsDB:
             "Created Date": date_added,
         }
         self._append_record(ws, row_data)
+        self._invalidate_cache("Contacts")
 
         contact_data["id"] = record_id
         contact_data["company_id"] = company_id
@@ -375,8 +405,7 @@ class SheetsDB:
 
     # --- Outreach Logs Tab ---
     def get_outreach_logs(self):
-        ws = self._get_worksheet("Outreach Logs")
-        return ws.get_all_records() if ws else []
+        return self._get_cached_records("Outreach Logs")
 
     def add_outreach_log(self, log_data: dict):
         ws = self._get_worksheet("Outreach Logs")
@@ -400,6 +429,7 @@ class SheetsDB:
             timestamp
         ]
         ws.append_row(row)
+        self._invalidate_cache("Outreach Logs")
         return record_id
 
     def update_outreach_status(self, message_id: str, status: str):
@@ -431,6 +461,7 @@ class SheetsDB:
                 continue  # skip header
             if len(row) >= msg_col_idx and row[msg_col_idx - 1] == message_id:
                 ws.update_cell(row_idx + 1, status_col_idx, status)
+                self._invalidate_cache("Outreach Logs")
                 logger.info(f"Updated outreach log row {row_idx + 1} status → {status} (msg_id={message_id})")
                 return
 
@@ -464,8 +495,7 @@ class SheetsDB:
 
     # --- Runs Tab ---
     def get_runs(self):
-        ws = self._get_worksheet("Runs")
-        return ws.get_all_records() if ws else []
+        return self._get_cached_records("Runs")
 
     def add_run(self, run_data: dict):
         ws = self._get_worksheet("Runs")
@@ -490,6 +520,7 @@ class SheetsDB:
             "Timestamp": timestamp,
         }
         self._append_record(ws, row_data)
+        self._invalidate_cache("Runs")
 
         run_data["id"] = record_id
         run_data["created_date"] = timestamp
