@@ -47,18 +47,16 @@ export default function Contacts() {
       apiClient.post('/contacts/extract-selected', { company_ids }),
     onMutate: (company_ids) => {
       setExtractionAlert(null);
-      // Start polling progress every 3s
       const total = company_ids.length;
+      let processed = 0;
       setExtractProgress({ total, remaining: total, pct: 0 });
-      pollRef.current = setInterval(async () => {
-        try {
-          const pending = await apiClient.get('/companies/pending');
-          const remaining = pending.length;
-          const done = Math.max(0, total - remaining);
-          const pct  = Math.round((done / total) * 100);
-          setExtractProgress({ total, remaining, pct });
-        } catch (_) { /* silent */ }
-      }, 3000);
+      
+      // Simulate progress (approx 3 seconds per company) to avoid burning Google Sheets API read quota
+      pollRef.current = setInterval(() => {
+        processed = Math.min(total - 1, processed + 0.33); 
+        const pct = Math.round((processed / total) * 100);
+        setExtractProgress({ total, remaining: Math.max(1, Math.round(total - processed)), pct });
+      }, 1000);
     },
     onSuccess: (data) => {
       clearInterval(pollRef.current);
