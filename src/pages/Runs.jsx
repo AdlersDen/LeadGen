@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Activity, Building2, Users, Mail, MapPin } from 'lucide-react';
+import { Building2, Users, Mail, MapPin } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';

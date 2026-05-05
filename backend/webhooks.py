@@ -33,6 +33,7 @@ SENDGRID_EVENT_MAP = {
 
 
 @router.post("/api/webhooks/sendgrid")
+@router.post("/webhooks/sendgrid")
 async def sendgrid_webhook(request: Request):
     """
     Receives a JSON array of SendGrid events.

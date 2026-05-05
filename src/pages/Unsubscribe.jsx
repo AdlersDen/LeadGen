@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import apiClient from '@/api/apiClient';
 import { CheckCircle2, Loader2, AlertCircle, MailX } from 'lucide-react';
