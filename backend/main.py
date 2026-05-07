@@ -104,6 +104,7 @@ class SendEmailRequest(BaseModel):
     contact_name: str
     contact_email: str
     company_name: str
+    role: str = ""
     subject: str
     body: str
 
@@ -624,6 +625,9 @@ async def send_outreach_email(req: SendEmailRequest):
         to_name=req.contact_name,
         subject=req.subject,
         body=req.body,
+        contact_name=req.contact_name,
+        company_name=req.company_name,
+        role=req.role,
     )
 
     if not result["success"]:

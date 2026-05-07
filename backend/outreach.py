@@ -23,6 +23,12 @@ FROM_NAME          = os.getenv("SENDGRID_FROM_NAME", "Adler's Den")
 UNSUBSCRIBE_URL    = os.getenv("UNSUBSCRIBE_URL", "https://adlers-den-leadgen.vercel.app/unsubscribe")
 DAILY_SEND_LIMIT   = int(os.getenv("DAILY_SEND_LIMIT", "50"))
 
+# --- Brand sender & CTA config ---
+CALENDAR_LINK = os.getenv("CALENDAR_LINK", "https://calendly.com/adlersden")
+SENDER_NAME   = os.getenv("SENDER_NAME", "The Adler's Den Team")
+SENDER_TITLE  = os.getenv("SENDER_TITLE", "Corporate Gifting Specialist")
+SENDER_PHONE  = os.getenv("SENDER_PHONE", "+91 98XXX XXXXX")
+
 # ─── In-memory daily send counter ────────────────────────────────────────────
 # Resets automatically when the date changes (process restart on Render also resets it).
 _send_counter: dict[str, int] = {}   # { "YYYY-MM-DD": count }
@@ -74,70 +80,162 @@ def _increment_counter():
     _send_counter[today] = _send_counter.get(today, 0) + 1
 
 
-def _build_html_body(text_body: str, unsubscribe_url: str, recipient_email: str) -> str:
+def build_email_html(
+    contact_name: str,
+    company_name: str,
+    role: str,
+    subject: str,
+    body: str,
+    recipient_email: str = "",
+) -> str:
     """
-    Wraps the plain text pitch in a clean, professional HTML email.
-    Includes mandatory unsubscribe footer (PRD §6.5).
+    Builds a premium, inline-CSS HTML email for Adler's Den outreach.
+    All CSS is inline — no <style> tags, Gmail-safe.
+    PRD §6.5 — includes mandatory unsubscribe footer.
     """
-    html_paragraphs = "".join(
-        f"<p style='margin:0 0 12px 0;'>{line}</p>" if line.strip() else "<br/>"
-        for line in text_body.split("\n")
+    # --- Body paragraphs: split on newline, wrap each non-empty line ---
+    paragraphs_html = "".join(
+        f'<p style="margin:0 0 14px 0;font-family:Arial,Helvetica,sans-serif;'
+        f'font-size:16px;color:#374151;line-height:1.7;">{line.strip()}</p>'
+        for line in body.split("\n")
+        if line.strip()
     )
+
+    unsubscribe_href = f"{UNSUBSCRIBE_URL}?email={recipient_email}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Email from Adler's Den</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{subject}</title>
 </head>
-<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#f9f9f9;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9f9f9;padding:32px 0;">
+<body style="margin:0;padding:0;background-color:#F0EBE3;">
+
+  <!-- Outer wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background-color:#F0EBE3;padding:32px 0;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0"
-               style="background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-          <!-- Header -->
+        <table width="600" cellpadding="0" cellspacing="0" border="0"
+               style="max-width:600px;width:100%;">
+
+          <!-- ═══ HEADER BAND ═══ -->
           <tr>
-            <td style="background-color:#1a1a2e;padding:24px 32px;">
-              <p style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;letter-spacing:0.5px;">
-                Adler's Den
+            <td style="background-color:#2C1810;padding:16px 32px;text-align:center;">
+              <span style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                           color:#FAF7F2;letter-spacing:2px;font-variant:small-caps;
+                           font-weight:600;">
+                ADLER&rsquo;S DEN &middot; CORPORATE GIFTING
+              </span>
+            </td>
+          </tr>
+
+          <!-- ═══ HERO HEADLINE ═══ -->
+          <tr>
+            <td style="background-color:#FAF7F2;padding:32px 40px 28px 40px;">
+              <h1 style="margin:0;font-family:Georgia,'Times New Roman',Times,serif;
+                         font-size:26px;font-weight:bold;color:#2C1810;line-height:1.35;">
+                {subject}
+              </h1>
+            </td>
+          </tr>
+
+          <!-- ═══ BODY SECTION ═══ -->
+          <tr>
+            <td style="background-color:#ffffff;padding:32px 40px;">
+              {paragraphs_html}
+
+              <!-- ── Promise callout box ── -->
+              <div style="background-color:#F5EFE6;border-left:3px solid #8B4513;
+                          margin:24px 0;padding:16px 20px;">
+                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;
+                           color:#2C1810;font-style:italic;line-height:1.6;">
+                  Every Adler&rsquo;s Den experience is thoughtfully curated, personally
+                  delivered, and built around your company&rsquo;s values.
+                </p>
+              </div>
+
+              <!-- ── CTA Button ── -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                     style="margin:28px 0 24px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="{CALENDAR_LINK}"
+                       style="display:inline-block;background-color:#8B4513;color:#ffffff;
+                              font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                              font-weight:bold;letter-spacing:1.5px;text-decoration:none;
+                              text-transform:uppercase;padding:14px 32px;border-radius:4px;">
+                      SCHEDULE A QUICK CALL
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- ── Signature ── -->
+              <table cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;">
+                <tr>
+                  <td>
+                    <p style="margin:0 0 2px 0;font-family:Arial,Helvetica,sans-serif;
+                               font-size:14px;font-weight:bold;color:#2C1810;line-height:2;">
+                      {SENDER_NAME}
+                    </p>
+                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
+                               font-size:14px;color:#374151;line-height:2;">
+                      {SENDER_TITLE}
+                    </p>
+                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
+                               font-size:14px;color:#374151;line-height:2;">
+                      <a href="mailto:marketing@adlersden.com"
+                         style="color:#8B4513;text-decoration:none;">
+                        marketing@adlersden.com
+                      </a>
+                    </p>
+                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
+                               font-size:14px;color:#374151;line-height:2;">
+                      {SENDER_PHONE}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- ── P.S. line ── -->
+              <p style="margin:24px 0 0 0;font-family:Arial,Helvetica,sans-serif;
+                         font-size:13px;color:#6B7280;font-style:italic;line-height:1.6;">
+                P.S. &mdash; We currently work with corporates across Mumbai, Pune, and
+                Bangalore for their festive and milestone gifting. References available on
+                request.
               </p>
-              <p style="margin:4px 0 0 0;color:#a0aec0;font-size:12px;">
-                Premium Corporate Gifting &amp; Employee Engagement
+            </td>
+          </tr>
+
+          <!-- ═══ FOOTER ═══ -->
+          <tr>
+            <td style="background-color:#F5EFE6;padding:20px 40px;text-align:center;">
+              <p style="margin:0 0 4px 0;font-family:Arial,Helvetica,sans-serif;
+                         font-size:14px;font-weight:600;color:#2C1810;
+                         letter-spacing:1.5px;font-variant:small-caps;">
+                Adler&rsquo;s Den
+              </p>
+              <p style="margin:0 0 10px 0;font-family:Arial,Helvetica,sans-serif;
+                         font-size:12px;color:#6B7280;">
+                Artisan &middot; Ethical &middot; Exceptional &middot; Mumbai
+              </p>
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
+                         font-size:11px;color:#9CA3AF;line-height:1.6;">
+                You are receiving this because your organisation may benefit from our
+                services.<br />
+                <a href="{unsubscribe_href}"
+                   style="color:#8B4513;text-decoration:underline;">Unsubscribe</a>
               </p>
             </td>
           </tr>
-          <!-- Body -->
-          <tr>
-            <td style="padding:32px;color:#2d3748;font-size:15px;line-height:1.7;">
-              {html_paragraphs}
-            </td>
-          </tr>
-          <!-- Divider -->
-          <tr>
-            <td style="padding:0 32px;">
-              <hr style="border:none;border-top:1px solid #e2e8f0;margin:0;" />
-            </td>
-          </tr>
-          <!-- Footer — Mandatory Unsubscribe (PRD §6.5) -->
-          <tr>
-            <td style="padding:20px 32px;text-align:center;">
-              <p style="margin:0;color:#a0aec0;font-size:11px;line-height:1.6;">
-                You are receiving this email because your organisation may benefit from our services.
-                <br/>
-                If you wish to stop receiving emails from us, please
-                <a href="{unsubscribe_url}?email={recipient_email}"
-                   style="color:#667eea;text-decoration:underline;">unsubscribe here</a>.
-                <br/><br/>
-                &copy; Adler's Den | This email is intended for business decision-makers only.
-              </p>
-            </td>
-          </tr>
+
         </table>
       </td>
     </tr>
   </table>
+
 </body>
 </html>"""
 
@@ -147,6 +245,9 @@ def send_email(
     to_name: str,
     subject: str,
     body: str,
+    contact_name: str = "",
+    company_name: str = "",
+    role: str = "",
 ) -> dict:
     """
     Main entry point for Module 5.
@@ -176,7 +277,14 @@ def send_email(
             TrackingSettings, ClickTracking, OpenTracking,
         )
 
-        html_body = _build_html_body(body, UNSUBSCRIBE_URL, to_email)
+        html_body = build_email_html(
+            contact_name=contact_name or to_name,
+            company_name=company_name,
+            role=role,
+            subject=subject,
+            body=body,
+            recipient_email=to_email,
+        )
 
         message = Mail(
             from_email=Email(FROM_EMAIL, FROM_NAME),
