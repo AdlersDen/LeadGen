@@ -183,12 +183,13 @@ BLOCKLIST_TYPES = {
 
 # Neutral types that are acceptable (IT parks, business parks, etc.)
 CORPORATE_KEYWORDS = [
-    "pvt", "ltd", "llp", "inc", "corp", "limited",
+    "pvt", "ltd", "llp", "inc", "corp", "limited", "company",
     "technologies", "solutions", "services", "consulting",
     "software", "systems", "enterprises", "industries",
     "group", "associates", "partners", "foundation",
     "capital", "ventures", "investments", "financial",
-    "management", "global", "international", "india"
+    "management", "global", "international", "india",
+    "manufacturer", "manufacturing",
 ]
 
 # Industry value key -> search terms for complex text search
@@ -561,10 +562,32 @@ def _is_junk_listing(name: str, complex_name: str = "") -> bool:
     return False
 
 
+# Strong corporate name signals — registered company suffixes/words
+# that indicate a genuine business entity, not a consumer shop
+STRONG_CORPORATE_SIGNALS = [
+    "pvt", "ltd", "llp", "inc", "corp", "limited", "company",
+]
+
+# Consumer types that override even strong corporate signals
+# (e.g. "XYZ Food Pvt Ltd" is still a restaurant)
+HARD_CONSUMER_TYPES = {
+    "restaurant", "food", "cafe", "bar", "bakery", "meal_delivery",
+    "meal_takeaway", "lodging", "hotel", "beauty_salon", "hair_care",
+    "spa", "gym", "fitness_center", "hospital", "doctor", "pharmacy",
+    "dentist", "veterinary_care", "school", "university",
+    "night_club", "amusement_park", "casino", "bowling_alley",
+    "movie_theater", "stadium", "zoo", "aquarium",
+    "funeral_home", "cemetery", "church", "hindu_temple", "mosque",
+    "natural_feature", "park", "airport",
+}
+
+
 def _is_b2b_company(place: dict) -> bool:
     """
     PRD §6.1 filtering — returns True only if the place looks corporate.
-    Checks Google types + name heuristics.
+    Checks name-based corporate signals first (so enterprise companies like
+    "Titan Company Limited" aren't blocked by generic Google types like "store"),
+    then falls back to Google types + keyword heuristics.
     """
     place_types = set(place.get("types", []))
     name_lower = place.get("name", "").lower()
@@ -573,7 +596,16 @@ def _is_b2b_company(place: dict) -> bool:
     if "atm" in name_lower and len(name_lower) < 15:
         return False
 
-    # Hard exclude
+    # Fast path: if the name clearly indicates a registered company
+    # (contains "pvt", "ltd", "limited", "company", etc.), accept it
+    # UNLESS it has hard consumer types (restaurant, gym, hospital, etc.)
+    has_strong_signal = any(kw in name_lower for kw in STRONG_CORPORATE_SIGNALS)
+    if has_strong_signal:
+        if place_types & HARD_CONSUMER_TYPES:
+            return False
+        return True
+
+    # Hard exclude by type (only for non-corporate-named places)
     if place_types & BLOCKLIST_TYPES:
         return False
 
@@ -797,7 +829,7 @@ def discover_companies(
         else:
             nb_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 
-            for keyword in ["office", "corporate"]:
+            for keyword in ["office", "corporate", "company", "pvt ltd"]:
                 nb_params = {
                     "location": f"{cx_lat},{cx_lng}",
                     "radius":   int(radius_m),
