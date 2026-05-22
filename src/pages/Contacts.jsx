@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp, Clock, Linkedin, MapPin } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -307,6 +307,8 @@ export default function Contacts() {
               <TableHead>Role</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>LinkedIn</TableHead>
               <TableHead>Confidence</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -315,14 +317,14 @@ export default function Contacts() {
             {isLoading ? (
               Array(5).fill(0).map((_, i) => (
                 <TableRow key={i}>
-                  {Array(6).fill(0).map((_, j) => (
+                  {Array(8).fill(0).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-24" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                   No contacts found
                 </TableCell>
               </TableRow>
@@ -333,6 +335,9 @@ export default function Contacts() {
                 const role       = contact.role         || contact['Role']           || '';
                 const company    = contact.company_name || contact['Company Name']   || '';
                 const email      = contact.email        || contact['Email']          || '';
+                const linkedinUrl = contact.linkedin_url || contact['LinkedIn URL']  || '';
+                const seniority  = contact.seniority    || contact['Seniority']      || '';
+                const location   = contact.location     || contact['Location']       || '';
                 const confidence = contact.confidence_score || contact['Confidence Score'];
                 const status     = contact.status       || contact['Status']         || '';
 
@@ -359,6 +364,21 @@ export default function Contacts() {
                     <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
                     <TableCell className="text-sm">{company || '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{email || '—'}</TableCell>
+                    <TableCell>
+                      {location ? (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />{location}
+                        </span>
+                      ) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {linkedinUrl ? (
+                        <a href={linkedinUrl} target="_blank" rel="noopener noreferrer"
+                           className="text-blue-600 hover:text-blue-800 transition-colors">
+                          <Linkedin className="w-4 h-4" />
+                        </a>
+                      ) : '—'}
+                    </TableCell>
                     <TableCell>
                       {confidence ? (
                         <span

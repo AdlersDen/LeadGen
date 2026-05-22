@@ -42,16 +42,63 @@ The Adler's Den Team
 """
 
 
-def _build_prompt(contact_name: str, role: str, company_name: str) -> str:
+import requests
+
+def _get_company_intel(domain: str) -> str:
+    """Fetches company intelligence from Apollo to enrich the AI pitch."""
+    if not domain:
+        return ""
+        
+    apollo_key = os.getenv("APOLLO_API_KEY")
+    if not apollo_key:
+        return ""
+        
+    try:
+        r = requests.post(
+            "https://api.apollo.io/v1/organizations/enrich",
+            json={"domain": domain},
+            headers={"Content-Type": "application/json", "X-Api-Key": apollo_key},
+            timeout=5
+        )
+        data = r.json()
+        org = data.get("organization", {})
+        if not org:
+            return ""
+            
+        intel = []
+        if org.get("estimated_num_employees"):
+            intel.append(f"Estimated Headcount: {org['estimated_num_employees']}")
+        if org.get("latest_funding_stage"):
+            intel.append(f"Funding Stage: {org['latest_funding_stage']}")
+        if org.get("total_funding_printed"):
+            intel.append(f"Total Funding: {org['total_funding_printed']}")
+        if org.get("industry"):
+            intel.append(f"Industry: {org['industry']}")
+        if org.get("seo_description"):
+            desc = org['seo_description']
+            # Truncate description to keep prompt small
+            if len(desc) > 200: desc = desc[:197] + "..."
+            intel.append(f"Company Description: {desc}")
+            
+        if not intel:
+            return ""
+            
+        return "\nCompany Context:\n- " + "\n- ".join(intel)
+    except Exception as e:
+        logger.warning(f"Failed to fetch company intel for {domain}: {e}")
+        return ""
+
+def _build_prompt(contact_name: str, role: str, company_name: str, company_intel: str = "") -> str:
     """Builds the Gemini prompt exactly as specified in PRD §6.4."""
     return f"""You are an expert B2B sales copywriter. Write a cold outreach email for Adler's Den, a premium corporate gifting and employee engagement company.
 
 Target contact: {contact_name}, {role} at {company_name}
+{company_intel}
 
 Strict rules:
 1. Under 120 words total (email body only, excluding subject).
 2. Personalize based on the contact's specific role (e.g., HR gets a message about employee recognition, Marketing gets a message about client gifting).
-3. Mention concrete gifting or employee engagement use cases relevant to their function.
+3. If Company Context is provided, weave 1 relevant fact (like headcount, funding, or industry) naturally into the pitch to show you did your research.
 4. End with a soft CTA—suggest a quick 15-minute call or meeting, NO pressure.
 5. Warm, professional tone. No buzzwords. No generic fluff.
 6. Include a compelling subject line.
@@ -87,7 +134,20 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
     logger.info(f"Generating pitch for {contact_name} @ {company_name}. Waiting {RATE_LIMIT_DELAY_SECONDS}s...")
     time.sleep(RATE_LIMIT_DELAY_SECONDS)
 
-    prompt = _build_prompt(contact_name, role, company_name)
+    # Fetch domain for company intel
+    domain = ""
+    try:
+        from sheets_db import db
+        companies = db.get_companies()
+        for c in companies:
+            if c.get("Name") == company_name or c.get("Company Name") == company_name:
+                domain = c.get("Domain", "")
+                break
+    except Exception as e:
+        logger.warning(f"Could not fetch domain for {company_name}: {e}")
+
+    company_intel = _get_company_intel(domain)
+    prompt = _build_prompt(contact_name, role, company_name, company_intel)
     pitch = None
 
     # Try Groq first

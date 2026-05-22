@@ -5,7 +5,7 @@ import requests
 load_dotenv()
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
 
-url = "https://api.apollo.io/v1/mixed_people/search"
+url = "https://api.apollo.io/v1/mixed_people/api_search"
 headers = {
     "Content-Type": "application/json",
     "Cache-Control": "no-cache",

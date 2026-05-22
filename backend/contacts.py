@@ -64,68 +64,123 @@ def _role_priority(title: str) -> int:
 def _search_apollo(company_name: str, domain: str) -> list[dict]:
     """
     Apollo.io People Search — PRIMARY source.
-    Uses the /v1/mixed_people/search endpoint.
+    Two-step approach:
+      1. Search by domain using q_organization_domains_list → get candidates + titles
+      2. Unlock emails for qualifying people via /v1/people/bulk_match
     """
     if not APOLLO_API_KEY:
         logger.warning("APOLLO_API_KEY not set. Skipping Apollo.io lookup.")
         return []
 
-    url = "https://api.apollo.io/v1/mixed_people/search"
     headers = {
         "Content-Type": "application/json",
         "Cache-Control": "no-cache",
         "X-Api-Key": APOLLO_API_KEY,
     }
+
+    # ── Step 1: Find people at this domain ───────────────────────────────────
+    search_url = "https://api.apollo.io/v1/mixed_people/api_search"
     payload = {
-        "q_organization_domains": [domain],
-        "person_titles": [
-            "HR Manager", "Head of HR", "CHRO", "VP People", "People Manager",
-            "Marketing Manager", "CMO", "Marketing Head", "Head of Marketing",
-            "Admin Manager", "Procurement Head", "Office Manager", "Admin Head",
-            "Head of Culture", "Employee Experience", "Total Rewards", "VP Sales",
-            "CRO", "COO", "Head of Operations", "Workplace Experience",
-            "Facilities Manager", "Business Development", "Customer Success", 
-            "PR Head", "CEO", "Founder", "Managing Director"
-        ],
+        "q_organization_domains_list": [domain],
         "page": 1,
-        "per_page": 10,
+        "per_page": 25,  # Fetch more candidates to filter by role
     }
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        resp = requests.post(search_url, json=payload, headers=headers, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-
-        people = data.get("people", [])
-        contacts = []
-        for p in people:
-            email = p.get("email", "")
-            if not email or email == "email_not_unlocked@domain.com":
-                continue  # Apollo hides emails unless you unlock them
-
-            title = p.get("title", "")
-            priority = _role_priority(title)
-            if priority == 99:
-                continue
-
-            contacts.append({
-                "full_name": p.get("name", ""),
-                "email": email,
-                "role": title,
-                "confidence_score": 70,  # Apollo unlocked emails are generally reliable
-                "source": "apollo.io",
-                "_priority": priority,
-            })
-
-        contacts.sort(key=lambda x: x["_priority"])
-        for c in contacts:
-            c.pop("_priority", None)
-
-        logger.info(f"Apollo.io found {len(contacts)} qualifying contacts for {company_name}")
-        return contacts
-
+        all_people = data.get("people", [])
+        logger.info(f"Apollo Step 1: found {len(all_people)} raw candidates at {domain} (total in DB: {data.get('total_entries', 0)})")
     except Exception as e:
-        logger.error(f"Apollo.io request failed for {company_name}: {e}")
+        logger.error(f"Apollo.io Step 1 (search) failed for {company_name}: {e}")
         return []
+
+    # ── Step 2: Filter by role, then unlock emails via bulk_match ─────────────
+    # Build candidate list — Apollo returns obfuscated names + title in search
+    qualifying = []
+    for p in all_people:
+        title = p.get("title", "") or ""
+        priority = _role_priority(title)
+        if priority == 99:
+            continue  # Skip non-target roles
+
+        # Apollo search returns first_name but obfuscates last_name
+        first_name = p.get("first_name", "") or ""
+        last_name_obf = p.get("last_name_obfuscated", "") or ""
+        person_id = p.get("id", "")
+
+        qualifying.append({
+            "id": person_id,
+            "first_name": first_name,
+            "last_name_obfuscated": last_name_obf,
+            "title": title,
+            "_priority": priority,
+        })
+
+    if not qualifying:
+        logger.info(f"Apollo.io: No qualifying roles found at {domain} for {company_name}")
+        return []
+
+    logger.info(f"Apollo Step 2: Unlocking emails for {len(qualifying[:10])} qualifying candidates at {domain}")
+
+    # Unlock emails — use /people/bulk_match with person IDs
+    bulk_url = "https://api.apollo.io/v1/people/bulk_match"
+    details = [{"id": p["id"]} for p in qualifying[:10]]  # Max 10 to conserve credits
+    try:
+        bulk_resp = requests.post(
+            bulk_url,
+            json={"details": details, "reveal_personal_emails": False},
+            headers=headers,
+            timeout=20
+        )
+        bulk_resp.raise_for_status()
+        bulk_data = bulk_resp.json()
+        matches = bulk_data.get("matches", [])
+    except Exception as e:
+        logger.error(f"Apollo.io Step 2 (bulk_match) failed for {company_name}: {e}")
+        return []
+
+    # ── Step 3: Build final contact list from unlocked data ───────────────────
+    contacts = []
+    for match in matches:
+        if match is None:
+            continue
+        email = match.get("email", "")
+        if not email:
+            continue
+
+        title = match.get("title", "") or ""
+        priority = _role_priority(title)
+        if priority == 99:
+            continue
+
+        # Extract extra fields from Apollo match object
+        linkedin_url = match.get("linkedin_url", "")
+        seniority = match.get("seniority", "")
+        city = match.get("city", "")
+        state = match.get("state", "")
+        location_parts = [p for p in [city, state] if p]
+        location = ", ".join(location_parts)
+
+        contacts.append({
+            "full_name": match.get("name", ""),
+            "email": email,
+            "role": title,
+            "confidence_score": 85,  # Apollo matched + unlocked = high confidence
+            "source": "apollo.io",
+            "_priority": priority,
+            "linkedin_url": linkedin_url,
+            "seniority": seniority,
+            "location": location,
+        })
+
+    contacts.sort(key=lambda x: x["_priority"])
+    for c in contacts:
+        c.pop("_priority", None)
+
+    logger.info(f"Apollo.io found {len(contacts)} qualifying contacts for {company_name}")
+    return contacts
+
 
 
 def _search_hunter(domain: str) -> list[dict]:
