@@ -53,7 +53,8 @@ origins = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",     # React/Next.js default
     "http://127.0.0.1:3000",
-    "https://adlers-den-leadgen.vercel.app" # Production frontend
+    "https://adlersden-leadgen.vercel.app",   # Production frontend (new)
+    "https://adlers-den-leadgen.vercel.app",  # Production frontend (old, keep for safety)
 ]
 
 # Add Vercel preview environments support if FRONTEND_URL is set in environment
