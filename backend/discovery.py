@@ -184,9 +184,8 @@ SOFT_ALLOWED_TYPES = {
     "car_dealer",      # Fleet/corporate departments at dealerships
 }
 
-# Types to EXCLUDE — only truly non-business places.
-# Everything else (retail stores, restaurants, hotels, salons, gyms, hospitals,
-# schools, etc.) is allowed since they all have staff who could be customers.
+# Types to EXCLUDE — non-businesses + low-budget micro retail.
+# We KEEP retail stores, hotels, hospitals, schools (corporate-scale).
 BLOCKLIST_TYPES = {
     # Religious
     "church", "hindu_temple", "mosque",
@@ -198,9 +197,16 @@ BLOCKLIST_TYPES = {
     # Pure utility / parking / transport
     "atm", "parking", "gas_station", "bus_station", "train_station",
     "subway_station", "transit_station", "taxi_stand", "airport",
-    # Nature / leisure landmarks (not businesses)
+    # Nature / leisure landmarks
     "natural_feature", "park", "tourist_attraction",
     "stadium", "zoo", "aquarium", "amusement_park",
+    # Micro food/beverage retail — too small for corporate gifting budgets
+    "restaurant", "cafe", "bar", "bakery", "meal_delivery", "meal_takeaway",
+    "food",
+    # Small wellness / personal care — usually individual operators
+    "beauty_salon", "hair_care", "spa", "gym", "fitness_center",
+    # Pet / quirky / very small retail
+    "pet_store", "laundry", "car_wash", "car_repair",
 }
 
 # Name-based keywords that indicate a corporate / B2B entity
@@ -600,17 +606,26 @@ def _is_junk_listing(name: str, complex_name: str = "") -> bool:
     return False
 
 
-# Name patterns that always disqualify — only truly non-business places.
-# We INCLUDE all kinds of businesses (B2B + B2C: jewellery shops, restaurants,
-# hotels, watch stores, gold loan branches, interior designers, etc.) since
-# every business has staff that could receive corporate gifts.
+# Name patterns that always disqualify — non-businesses + individual/micro-scale
+# operations that don't have HR or procurement budgets for corporate gifting.
+# We KEEP: jewellery shops, watch stores, electronics stores, retail chains,
+# hotels, hospitals, schools, branch offices — they have staff and budgets.
 NAME_BLOCKLIST_PATTERNS = [
-    # Residential co-operatives — not businesses
+    # Residential co-operatives
     " society", "co-op hsg", "cooperative housing", " chs ", "co-op society",
     "cooperative society", "apartment", "apartments", "residency", "residences",
-    # Government bodies — not gift-buying entities
+    # Government bodies
     "municipal corporation", "nagar nigam", "gram panchayat", "panchayat office",
     "kacheri", "tehsildar", "collector office",
+    # Individual professionals (no staff to gift)
+    "interior designer", "interior design", "freelance", "freelancer",
+    "photo studio", "wedding photographer", "photographer", "videographer",
+    "tailor", "tailoring", "boutique",
+    # Micro food/beverage retail
+    "tiffin", "snack center", "snack centre", "tea stall", "chai stall",
+    "juice center", "juice centre", "pan shop", "paan shop",
+    # Small wellness / personal care
+    "barber", "salon", "beauty parlour", "beauty parlor", "spa",
 ]
 
 
