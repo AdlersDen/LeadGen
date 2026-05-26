@@ -106,6 +106,7 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         logger.warning("APOLLO_API_KEY not set. Skipping Apollo.io lookup.")
         return []
 
+    # Auth via header only — sending both header and body api_key can cause 422.
     headers = {
         "Content-Type": "application/json",
         "Cache-Control": "no-cache",
@@ -122,37 +123,33 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     time.sleep(0.5)
 
     # ── Step 1: Find people at this domain ───────────────────────────────────
-    # Apollo's /mixed_people/search requires at least one filter besides domain
-    # (returns 422 otherwise). We pass our target role keywords as person_titles.
-    target_titles = [
-        "HR", "Human Resources", "CHRO", "People", "Culture", "Talent",
-        "Marketing", "CMO", "Brand", "Growth", "Communications",
-        "Admin", "Office Manager", "Procurement", "Purchase", "Vendor",
-        "Operations", "COO", "Facilities", "Workplace",
-        "Sales", "Business Development", "BD", "CRO", "Revenue",
-        "CEO", "Founder", "Owner", "Managing Director", "Director", "President",
-    ]
+    # Minimum-payload search — keep request simple to avoid 422s.
     search_url = "https://api.apollo.io/v1/mixed_people/search"
     payload = {
-        "api_key": APOLLO_API_KEY,
         "q_organization_domains_list": [root_domain],
-        "person_titles": target_titles,
         "page": 1,
-        "per_page": 25,  # Fetch more candidates to filter by role
+        "per_page": 10,
     }
     try:
         resp = requests.post(search_url, json=payload, headers=headers, timeout=15)
+        # Always log the raw response on non-2xx so we can diagnose Apollo's reason.
         if not resp.ok:
-            logger.error(f"Apollo Step 1 HTTP {resp.status_code} for {company_name} ({root_domain}): {resp.text[:500]}")
-            resp.raise_for_status()
+            logger.error(
+                f"Apollo Step 1 HTTP {resp.status_code} for {company_name} "
+                f"(domain='{root_domain}'): {resp.text[:600]}"
+            )
+            return []
         data = resp.json()
         all_people = data.get("people", [])
-        logger.info(f"Apollo Step 1: found {len(all_people)} raw candidates at {root_domain} (total in DB: {data.get('total_entries', 0)})")
+        logger.info(
+            f"Apollo Step 1: found {len(all_people)} candidates at {root_domain} "
+            f"(total in DB: {data.get('total_entries', 0)})"
+        )
         # Debug: log linkedin presence in Step 1 results
         step1_with_linkedin = sum(1 for p in all_people if p.get("linkedin_url"))
         logger.info(f"Apollo Step 1: {step1_with_linkedin}/{len(all_people)} have linkedin_url")
     except Exception as e:
-        logger.error(f"Apollo.io Step 1 (search) failed for {company_name}: {e}")
+        logger.error(f"Apollo.io Step 1 (search) exception for {company_name}: {type(e).__name__}: {e}")
         return []
 
     # ── Step 2: Filter by role, then unlock emails via bulk_match ─────────────
@@ -194,21 +191,25 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     try:
         bulk_resp = requests.post(
             bulk_url,
-            json={"api_key": APOLLO_API_KEY, "details": details, "reveal_personal_emails": False},
+            json={"details": details, "reveal_personal_emails": False},
             headers=headers,
             timeout=20
         )
-        bulk_resp.raise_for_status()
+        if not bulk_resp.ok:
+            logger.error(
+                f"Apollo Step 2 HTTP {bulk_resp.status_code} for {company_name}: "
+                f"{bulk_resp.text[:600]}"
+            )
+            return []
         bulk_data = bulk_resp.json()
         matches = bulk_data.get("matches", [])
         step2_with_linkedin = sum(1 for m in matches if m and m.get("linkedin_url"))
-        logger.info(f"Apollo Step 2: {step2_with_linkedin}/{len(matches)} matches have linkedin_url. Step1 map has {len(step1_linkedin)} entries.")
+        logger.info(
+            f"Apollo Step 2: {step2_with_linkedin}/{len(matches)} matches have linkedin_url. "
+            f"Step1 map has {len(step1_linkedin)} entries."
+        )
     except Exception as e:
-        try:
-            body = bulk_resp.json()
-        except Exception:
-            body = getattr(bulk_resp, 'text', '')
-        logger.error(f"Apollo.io Step 2 (bulk_match) failed for {company_name}: {e} | Response: {body}")
+        logger.error(f"Apollo.io Step 2 (bulk_match) exception for {company_name}: {type(e).__name__}: {e}")
         return []
 
     # ── Step 3: Build final contact list from unlocked data ───────────────────
