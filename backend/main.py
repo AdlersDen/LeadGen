@@ -16,6 +16,7 @@ Routes:
 """
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -503,7 +504,7 @@ async def extract_selected_contacts(req: ExtractSelectedRequest):
     skipped_already_extracted = 0
     successful_company_ids = []
 
-    for company in target_companies:
+    for idx, company in enumerate(target_companies):
         domain = company.get("Domain")
         company_name = company.get("Name") or company.get("Company Name")
         company_id = company.get("ID")
@@ -517,21 +518,25 @@ async def extract_selected_contacts(req: ExtractSelectedRequest):
             skipped_no_domain += 1
             continue
 
+        # Pacing delay between companies to avoid bursting Apollo / Hunter rate limits
+        if idx > 0:
+            time.sleep(1.5)
+
         try:
             # find_contacts tries Apollo.io first, then falls back to Hunter.io
             raw_contacts = find_contacts(company_name, domain)
             queued += 1
-            
+
             if raw_contacts:
                 for contact_data in raw_contacts:
                     contact_data["company_name"] = company_name
                     contact_data["status"] = "verified"
                     db.add_contact(contact_data, company_id)
-                
+
                 successful_company_ids.append(company_id)
             else:
                 db.mark_company_status(company_id, "no_contacts_found")
-                
+
         except Exception as e:
             logger.error(f"Selective contact extraction error for {company_name}: {e}")
             continue

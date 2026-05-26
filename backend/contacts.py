@@ -10,6 +10,7 @@ PRD §6.2 — Updated: Apollo is primary per user decision.
 import requests
 import logging
 import os
+import time
 from dotenv import load_dotenv
 import tldextract
 from cleaning import clean_contact_data
@@ -19,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 HUNTER_API_KEY = os.getenv("HUNTER_API_KEY")
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
+
+# Module-level Hunter cooldown — once Hunter 429s, skip it for the rest of the batch.
+# Set to a future epoch timestamp; calls before then bail early.
+_hunter_cooldown_until = 0.0
 
 # PRD §6.2 — Target roles in priority order
 TIER_1_KEYWORDS = [
@@ -109,6 +114,12 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
 
     # Normalise to root domain — Apollo rejects subdomains (e.g. stores.mac.in → mac.in)
     root_domain = extract_root_domain(domain)
+    if not root_domain or "." not in root_domain:
+        logger.warning(f"Apollo: invalid root domain '{root_domain}' from '{domain}' for {company_name}. Skipping.")
+        return []
+
+    # Small pacing delay so we don't burst Apollo across many companies
+    time.sleep(0.5)
 
     # ── Step 1: Find people at this domain ───────────────────────────────────
     # Apollo's /mixed_people/search requires at least one filter besides domain
@@ -262,10 +273,22 @@ def _search_hunter(domain: str) -> list[dict]:
     """
     Hunter.io Domain Search — FALLBACK when Apollo returns nothing.
     We filter for target roles and confidence >= 50.
+    Respects a global cooldown after 429s so we don't keep hammering a rate-limited API.
     """
+    global _hunter_cooldown_until
+
     if not HUNTER_API_KEY:
         logger.warning("HUNTER_API_KEY not set. Skipping Hunter.io lookup.")
         return []
+
+    now = time.time()
+    if now < _hunter_cooldown_until:
+        remaining = int(_hunter_cooldown_until - now)
+        logger.info(f"Hunter.io in cooldown ({remaining}s remaining). Skipping {domain}.")
+        return []
+
+    # Small delay to be polite to Hunter's rate limit
+    time.sleep(1.0)
 
     root_domain = extract_root_domain(domain)
     url = "https://api.hunter.io/v2/domain-search"
@@ -277,6 +300,11 @@ def _search_hunter(domain: str) -> list[dict]:
     }
     try:
         resp = requests.get(url, params=params, timeout=15)
+        if resp.status_code == 429:
+            # Trip the cooldown for 5 minutes — Hunter's free tier rate limit is strict
+            _hunter_cooldown_until = time.time() + 300
+            logger.warning(f"Hunter.io 429 for {domain}. Entering 5-minute cooldown.")
+            return []
         resp.raise_for_status()
         data = resp.json()
 
