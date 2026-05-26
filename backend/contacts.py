@@ -107,19 +107,25 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         "X-Api-Key": APOLLO_API_KEY,
     }
 
+    # Normalise to root domain — Apollo rejects subdomains (e.g. stores.mac.in → mac.in)
+    root_domain = extract_root_domain(domain)
+
     # ── Step 1: Find people at this domain ───────────────────────────────────
-    search_url = "https://api.apollo.io/v1/mixed_people/api_search"
+    search_url = "https://api.apollo.io/v1/mixed_people/search"
     payload = {
-        "q_organization_domains_list": [domain],
+        "api_key": APOLLO_API_KEY,
+        "q_organization_domains_list": [root_domain],
         "page": 1,
         "per_page": 25,  # Fetch more candidates to filter by role
     }
     try:
         resp = requests.post(search_url, json=payload, headers=headers, timeout=15)
-        resp.raise_for_status()
+        if not resp.ok:
+            logger.error(f"Apollo Step 1 HTTP {resp.status_code} for {company_name} ({root_domain}): {resp.text[:300]}")
+            resp.raise_for_status()
         data = resp.json()
         all_people = data.get("people", [])
-        logger.info(f"Apollo Step 1: found {len(all_people)} raw candidates at {domain} (total in DB: {data.get('total_entries', 0)})")
+        logger.info(f"Apollo Step 1: found {len(all_people)} raw candidates at {root_domain} (total in DB: {data.get('total_entries', 0)})")
         # Debug: log linkedin presence in Step 1 results
         step1_with_linkedin = sum(1 for p in all_people if p.get("linkedin_url"))
         logger.info(f"Apollo Step 1: {step1_with_linkedin}/{len(all_people)} have linkedin_url")
@@ -166,7 +172,7 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     try:
         bulk_resp = requests.post(
             bulk_url,
-            json={"details": details, "reveal_personal_emails": False},
+            json={"api_key": APOLLO_API_KEY, "details": details, "reveal_personal_emails": False},
             headers=headers,
             timeout=20
         )
