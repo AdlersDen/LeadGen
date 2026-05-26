@@ -120,6 +120,9 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         data = resp.json()
         all_people = data.get("people", [])
         logger.info(f"Apollo Step 1: found {len(all_people)} raw candidates at {domain} (total in DB: {data.get('total_entries', 0)})")
+        # Debug: log linkedin presence in Step 1 results
+        step1_with_linkedin = sum(1 for p in all_people if p.get("linkedin_url"))
+        logger.info(f"Apollo Step 1: {step1_with_linkedin}/{len(all_people)} have linkedin_url")
     except Exception as e:
         logger.error(f"Apollo.io Step 1 (search) failed for {company_name}: {e}")
         return []
@@ -170,6 +173,8 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         bulk_resp.raise_for_status()
         bulk_data = bulk_resp.json()
         matches = bulk_data.get("matches", [])
+        step2_with_linkedin = sum(1 for m in matches if m and m.get("linkedin_url"))
+        logger.info(f"Apollo Step 2: {step2_with_linkedin}/{len(matches)} matches have linkedin_url. Step1 map has {len(step1_linkedin)} entries.")
     except Exception as e:
         try:
             body = bulk_resp.json()
