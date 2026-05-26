@@ -124,6 +124,56 @@ async def health_check():
     return {"status": "ok", "message": "Adler's Den backend is running!"}
 
 
+@app.get("/api/debug/apollo-test")
+async def apollo_test(domain: str = "apollo.io"):
+    """
+    Diagnostic: send a minimum Apollo request and return whatever Apollo replies.
+    Helps confirm the API key works at all, separate from the extraction pipeline.
+    """
+    import requests
+    api_key = os.getenv("APOLLO_API_KEY")
+    if not api_key:
+        return {"error": "APOLLO_API_KEY env var not set on Render"}
+
+    url = "https://api.apollo.io/v1/mixed_people/search"
+    headers = {"Content-Type": "application/json", "X-Api-Key": api_key}
+    payload = {"q_organization_domains_list": [domain], "page": 1, "per_page": 1}
+
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        return {
+            "endpoint": url,
+            "status_code": resp.status_code,
+            "ok": resp.ok,
+            "rate_limit_headers": {
+                k: v for k, v in resp.headers.items()
+                if "limit" in k.lower() or "credit" in k.lower() or "remain" in k.lower()
+            },
+            "response_body": resp.text[:2000],
+            "api_key_hint": f"{api_key[:4]}...{api_key[-4:]} (len={len(api_key)})",
+            "tested_domain": domain,
+        }
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+@app.get("/api/debug/version")
+async def version():
+    """Diagnostic: returns commit hash so we can verify which code is live."""
+    import subprocess
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()[:8]
+    except Exception:
+        sha = "unknown"
+    return {
+        "commit": sha,
+        "apollo_key_set": bool(os.getenv("APOLLO_API_KEY")),
+        "hunter_key_set": bool(os.getenv("HUNTER_API_KEY")),
+    }
+
+
 # ───────────────────────────────────────────────────────────────────────────────
 # Unsubscribe (PRD §6.5 Compliance)
 # ───────────────────────────────────────────────────────────────────────────────
