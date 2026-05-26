@@ -123,33 +123,48 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     time.sleep(0.5)
 
     # ── Step 1: Find people at this domain ───────────────────────────────────
-    # Minimum-payload search — keep request simple to avoid 422s.
-    search_url = "https://api.apollo.io/v1/mixed_people/search"
+    # Try the original (undocumented but historically-working) endpoint first,
+    # then fall back to the documented one. Both accept the same payload.
     payload = {
         "q_organization_domains_list": [root_domain],
         "page": 1,
         "per_page": 10,
     }
-    try:
-        resp = requests.post(search_url, json=payload, headers=headers, timeout=15)
-        # Always log the raw response on non-2xx so we can diagnose Apollo's reason.
-        if not resp.ok:
+    endpoints = [
+        "https://api.apollo.io/v1/mixed_people/api_search",   # original (worked previously)
+        "https://api.apollo.io/v1/mixed_people/search",       # documented fallback
+    ]
+
+    all_people = None
+    for attempt_url in endpoints:
+        try:
+            resp = requests.post(attempt_url, json=payload, headers=headers, timeout=15)
+            if resp.ok:
+                data = resp.json()
+                all_people = data.get("people", [])
+                logger.info(
+                    f"Apollo Step 1 ({attempt_url.rsplit('/', 1)[-1]}): "
+                    f"found {len(all_people)} candidates at {root_domain} "
+                    f"(total in DB: {data.get('total_entries', 0)})"
+                )
+                step1_with_linkedin = sum(1 for p in all_people if p.get("linkedin_url"))
+                logger.info(f"Apollo Step 1: {step1_with_linkedin}/{len(all_people)} have linkedin_url")
+                break  # success — stop trying other endpoints
+            else:
+                # Log the actual response body so we can see WHY Apollo rejects.
+                logger.error(
+                    f"Apollo Step 1 HTTP {resp.status_code} via "
+                    f"{attempt_url.rsplit('/', 1)[-1]} for {company_name} "
+                    f"(domain='{root_domain}'): {resp.text[:600]}"
+                )
+        except Exception as e:
             logger.error(
-                f"Apollo Step 1 HTTP {resp.status_code} for {company_name} "
-                f"(domain='{root_domain}'): {resp.text[:600]}"
+                f"Apollo Step 1 exception via {attempt_url.rsplit('/', 1)[-1]} "
+                f"for {company_name}: {type(e).__name__}: {e}"
             )
-            return []
-        data = resp.json()
-        all_people = data.get("people", [])
-        logger.info(
-            f"Apollo Step 1: found {len(all_people)} candidates at {root_domain} "
-            f"(total in DB: {data.get('total_entries', 0)})"
-        )
-        # Debug: log linkedin presence in Step 1 results
-        step1_with_linkedin = sum(1 for p in all_people if p.get("linkedin_url"))
-        logger.info(f"Apollo Step 1: {step1_with_linkedin}/{len(all_people)} have linkedin_url")
-    except Exception as e:
-        logger.error(f"Apollo.io Step 1 (search) exception for {company_name}: {type(e).__name__}: {e}")
+
+    if all_people is None:
+        # All endpoints failed
         return []
 
     # ── Step 2: Filter by role, then unlock emails via bulk_match ─────────────
