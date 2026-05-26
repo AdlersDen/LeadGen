@@ -111,17 +111,28 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     root_domain = extract_root_domain(domain)
 
     # ── Step 1: Find people at this domain ───────────────────────────────────
+    # Apollo's /mixed_people/search requires at least one filter besides domain
+    # (returns 422 otherwise). We pass our target role keywords as person_titles.
+    target_titles = [
+        "HR", "Human Resources", "CHRO", "People", "Culture", "Talent",
+        "Marketing", "CMO", "Brand", "Growth", "Communications",
+        "Admin", "Office Manager", "Procurement", "Purchase", "Vendor",
+        "Operations", "COO", "Facilities", "Workplace",
+        "Sales", "Business Development", "BD", "CRO", "Revenue",
+        "CEO", "Founder", "Owner", "Managing Director", "Director", "President",
+    ]
     search_url = "https://api.apollo.io/v1/mixed_people/search"
     payload = {
         "api_key": APOLLO_API_KEY,
         "q_organization_domains_list": [root_domain],
+        "person_titles": target_titles,
         "page": 1,
         "per_page": 25,  # Fetch more candidates to filter by role
     }
     try:
         resp = requests.post(search_url, json=payload, headers=headers, timeout=15)
         if not resp.ok:
-            logger.error(f"Apollo Step 1 HTTP {resp.status_code} for {company_name} ({root_domain}): {resp.text[:300]}")
+            logger.error(f"Apollo Step 1 HTTP {resp.status_code} for {company_name} ({root_domain}): {resp.text[:500]}")
             resp.raise_for_status()
         data = resp.json()
         all_people = data.get("people", [])
