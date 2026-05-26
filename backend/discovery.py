@@ -174,9 +174,9 @@ BLOCKLIST_TYPES = {
     # Nature / leisure landmarks
     "natural_feature", "park", "tourist_attraction",
     "stadium", "zoo", "aquarium", "amusement_park",
-    # Micro food/beverage retail — too small for corporate gifting budgets
+    # Food / beverage / hospitality — low corporate gifting budgets
     "restaurant", "cafe", "bar", "bakery", "meal_delivery", "meal_takeaway",
-    "food",
+    "food", "lodging",
     # Small wellness / personal care — usually individual operators
     "beauty_salon", "hair_care", "spa", "gym", "fitness_center",
     # Pet / quirky / very small retail
