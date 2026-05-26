@@ -184,22 +184,23 @@ SOFT_ALLOWED_TYPES = {
     "car_dealer",      # Fleet/corporate departments at dealerships
 }
 
-# PRD §6.1 — Types to EXCLUDE explicitly
+# Types to EXCLUDE — only truly non-business places.
+# Everything else (retail stores, restaurants, hotels, salons, gyms, hospitals,
+# schools, etc.) is allowed since they all have staff who could be customers.
 BLOCKLIST_TYPES = {
-    "restaurant", "food", "cafe", "bar", "bakery", "meal_delivery",
-    "meal_takeaway", "lodging", "hotel", "beauty_salon", "hair_care",
-    "spa", "gym", "fitness_center", "hospital", "doctor", "pharmacy",
-    "dentist", "veterinary_care", "school", "university", "church",
-    "hindu_temple", "mosque", "clothing_store", "grocery_or_supermarket",
-    "supermarket", "convenience_store", "department_store", "shoe_store",
-    "electronics_store", "furniture_store", "jewelry_store", "pet_store",
-    "hardware_store", "book_store", "bicycle_store",
-    "car_repair", "car_wash", "gas_station", "parking", "atm",
-    "post_office", "local_government_office", "ambulance_station",
-    "fire_station", "police", "night_club", "amusement_park", "casino",
-    "bowling_alley", "movie_theater", "stadium", "zoo", "aquarium",
-    "laundry", "funeral_home", "cemetery", "home_goods_store", "store",
-    "natural_feature", "park", "airport"
+    # Religious
+    "church", "hindu_temple", "mosque",
+    # Government / civic infrastructure
+    "local_government_office", "post_office", "ambulance_station",
+    "fire_station", "police", "courthouse", "embassy", "city_hall",
+    # Death / funeral
+    "funeral_home", "cemetery",
+    # Pure utility / parking / transport
+    "atm", "parking", "gas_station", "bus_station", "train_station",
+    "subway_station", "transit_station", "taxi_stand", "airport",
+    # Nature / leisure landmarks (not businesses)
+    "natural_feature", "park", "tourist_attraction",
+    "stadium", "zoo", "aquarium", "amusement_park",
 }
 
 # Name-based keywords that indicate a corporate / B2B entity
@@ -599,133 +600,50 @@ def _is_junk_listing(name: str, complex_name: str = "") -> bool:
     return False
 
 
-# Strong corporate name signals — registered company suffixes/words
-# Matched as whole words (regex \b...\b) so "Corporation" doesn't accidentally
-# match "corp" and let government bodies through.
-STRONG_CORPORATE_SIGNALS = [
-    "pvt", "ltd", "llp", "inc", "corp", "limited", "company",
-]
-
-# Consumer types that override even strong corporate signals
-# (e.g. "XYZ Food Pvt Ltd" is still a restaurant)
-HARD_CONSUMER_TYPES = {
-    "restaurant", "food", "cafe", "bar", "bakery", "meal_delivery",
-    "meal_takeaway", "lodging", "hotel", "beauty_salon", "hair_care",
-    "spa", "gym", "fitness_center", "hospital", "doctor", "pharmacy",
-    "dentist", "veterinary_care", "school", "university",
-    "night_club", "amusement_park", "casino", "bowling_alley",
-    "movie_theater", "stadium", "zoo", "aquarium",
-    "funeral_home", "cemetery", "church", "hindu_temple", "mosque",
-    "natural_feature", "park", "airport",
-    # Retail — block even when name contains "Company" / "Ltd"
-    # (e.g. "Titan Watch Company" — store-typed = retail branch, not HQ)
-    "store", "clothing_store", "grocery_or_supermarket", "supermarket",
-    "convenience_store", "department_store", "shoe_store",
-    "electronics_store", "furniture_store", "jewelry_store",
-    "pet_store", "hardware_store", "book_store", "bicycle_store",
-    "home_goods_store",
-    # Government / civic
-    "local_government_office", "post_office",
-}
-
-# Name patterns that always disqualify — checked FIRST, override every other signal.
-# Catches places where the Google "type" misses the consumer/non-corporate nature.
+# Name patterns that always disqualify — only truly non-business places.
+# We INCLUDE all kinds of businesses (B2B + B2C: jewellery shops, restaurants,
+# hotels, watch stores, gold loan branches, interior designers, etc.) since
+# every business has staff that could receive corporate gifts.
 NAME_BLOCKLIST_PATTERNS = [
-    # Housing co-operatives / residential
+    # Residential co-operatives — not businesses
     " society", "co-op hsg", "cooperative housing", " chs ", "co-op society",
     "cooperative society", "apartment", "apartments", "residency", "residences",
-    # Matrimonial / dating / lifestyle
-    "matrimonial", "shaadi", "marriage bureau", "vivah", "rishta",
-    # Individual professionals / retail services
-    "interior designer", "interior design", "freelance", "freelancer",
-    "photo studio", "wedding photo", "tailor", "tailoring", "boutique",
-    # Money / micro-credit retail
-    "gold loan", "money lender", "pawn", "money transfer", "western union",
-    # Government bodies / civic
+    # Government bodies — not gift-buying entities
     "municipal corporation", "nagar nigam", "gram panchayat", "panchayat office",
-    "bhavan", "kacheri", "tehsildar", "collector office", "post office",
-    # Branch / sub-office indicators
-    "branch office", "regional office", "sub-branch", "service centre",
-    "service center",
-    # Petty retail / shops
-    "general store", "kirana", "ration shop", "stationery", "xerox",
-    "mobile shop", "mobile repair", "saree shop", "sari shop", "watch shop",
-    "watch store", "jewellery shop", "jewelry shop",
-    # Food retail (in case Google types miss it)
-    "tiffin", "snack center", "tea stall", "chai stall",
+    "kacheri", "tehsildar", "collector office",
 ]
-
-# Domain prefixes that indicate a sub-page/branch, not the company's main site.
-SUBDOMAIN_BRANCH_PREFIXES = [
-    "branch.", "store.", "shop.", "shops.", "stores.", "office.",
-    "blog.", "support.", "help.", "docs.", "kb.", "wiki.",
-    "locate-us.", "locator.", "find.",
-]
-
-
-def _is_likely_branch_domain(domain: str) -> bool:
-    if not domain:
-        return False
-    return any(domain.lower().startswith(prefix) for prefix in SUBDOMAIN_BRANCH_PREFIXES)
-
-
-import re
-_STRONG_SIGNAL_RE = re.compile(
-    r"\b(" + "|".join(STRONG_CORPORATE_SIGNALS) + r")\b\.?",
-    re.IGNORECASE,
-)
 
 
 def _is_b2b_company(place: dict) -> bool:
     """
-    PRD §6.1 filtering — returns True only if the place looks corporate.
-    Order:
-      1) Hard name blocklist (catches societies, govt, retail individuals)
-      2) Hard type blocklist (incl. store, local_government_office)
-      3) Strong-name fast path (whole-word "ltd"/"pvt"/etc.) — accepts unless HARD consumer type
-      4) Allowed types
-      5) Soft types — only when name also has a corporate keyword
-      6) Pure keyword heuristic
+    Permissive filter — includes ALL businesses (B2B + B2C) unless clearly
+    non-business. Rejects only:
+      - Residential complexes (societies, apartments)
+      - Government bodies (municipal corp, panchayat, etc.)
+      - Religious places (church, temple, mosque)
+      - Civic infrastructure (parks, ATMs, post office, police, fire)
+      - Natural features (lakes, mountains)
+      - Junk listings (handled separately via _is_junk_listing)
+    Everything else — retail shops, restaurants, hotels, salons, individual
+    professionals, branch offices, etc. — is a valid outreach target.
     """
     place_types = set(place.get("types", []))
     name_lower = place.get("name", "").lower()
 
-    # 1) Hard name-pattern blocklist — overrides everything
+    # 1) Hard name-pattern blocklist — only residences and govt bodies
     if any(pattern in name_lower for pattern in NAME_BLOCKLIST_PATTERNS):
         return False
 
-    # ATM short-circuit
+    # 2) ATM short-circuit
     if "atm" in name_lower and len(name_lower) < 15:
         return False
 
-    # 2) Hard exclude by type — applies BEFORE strong signal so retail/store/gov
-    #    can't sneak through just because the name has "Company" in it
-    if place_types & HARD_CONSUMER_TYPES:
-        return False
-
-    # 3) Strong corporate signal — whole-word match, not substring,
-    #    so "Corporation" doesn't trigger via "corp"
-    if _STRONG_SIGNAL_RE.search(name_lower):
-        return True
-
-    # 4) Hard exclude by broader BLOCKLIST_TYPES (for non-corporate-named places)
+    # 3) Hard exclude by Google type — only non-business types
     if place_types & BLOCKLIST_TYPES:
         return False
 
-    # 5) Hard include by allowed types
-    if place_types & ALLOWED_TYPES:
-        return True
-
-    # 6) Soft include — broad types only with a corporate name keyword
-    if place_types & SOFT_ALLOWED_TYPES:
-        if any(kw in name_lower for kw in CORPORATE_KEYWORDS):
-            return True
-
-    # 7) Keyword heuristic
-    if any(kw in name_lower for kw in CORPORATE_KEYWORDS):
-        return True
-
-    return False
+    # Default: include — covers every kind of business with staff
+    return True
 
 
 def _extract_domain(place: dict) -> tuple:
@@ -1070,13 +988,8 @@ def discover_companies(
     companies = []
     for place in b2b_places:
         domain, phone = _extract_domain(place)
-
-        # Drop branch / sub-page domains so we don't waste Apollo credits on
-        # subdomains that won't resolve to a real org.
-        if _is_likely_branch_domain(domain):
-            logger.info(f"Discovery: dropped '{place.get('name')}' — branch-style domain '{domain}'")
-            continue
-
+        # Branch / sub-page domains (e.g. branch.bajajlifeinsurance.com) are
+        # kept — contacts.py normalizes them to the root domain before Apollo.
         rating = place.get("rating")
         tier   = _score_tier(rating, domain)
 
