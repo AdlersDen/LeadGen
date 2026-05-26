@@ -161,6 +161,11 @@ BLOCKLIST_TYPES = {
     # Government / civic infrastructure
     "local_government_office", "post_office", "ambulance_station",
     "fire_station", "police", "courthouse", "embassy", "city_hall",
+    # Geographic regions (city, district, ward, etc.) — these are localities,
+    # not businesses. Catches Mumbai/Thane being returned as places.
+    "locality", "political", "country", "sublocality",
+    "administrative_area_level_1", "administrative_area_level_2",
+    "administrative_area_level_3", "neighborhood",
     # Death / funeral
     "funeral_home", "cemetery",
     # Pure utility / parking / transport
@@ -177,6 +182,21 @@ BLOCKLIST_TYPES = {
     # Pet / quirky / very small retail
     "pet_store", "laundry", "car_wash", "car_repair",
 }
+
+# Domain suffixes that indicate a government / military entity — drop these
+# at the enrichment step so we don't waste API credits trying to extract
+# contacts from .gov.in / .gov / .mil etc.
+GOV_DOMAIN_SUFFIXES = (
+    ".gov.in", ".gov", ".gov.uk", ".gov.au", ".gov.ca",
+    ".mil", ".mil.in", ".nic.in",
+)
+
+
+def _is_gov_domain(domain: str) -> bool:
+    if not domain:
+        return False
+    d = domain.lower().rstrip("/")
+    return any(d.endswith(suffix) for suffix in GOV_DOMAIN_SUFFIXES)
 
 # Industry value key -> search terms for complex text search
 INDUSTRY_KEYWORDS = {
@@ -553,12 +573,18 @@ def _is_junk_listing(name: str, complex_name: str = "") -> bool:
 # We KEEP: jewellery shops, watch stores, electronics stores, retail chains,
 # hotels, hospitals, schools, branch offices — they have staff and budgets.
 NAME_BLOCKLIST_PATTERNS = [
-    # Residential co-operatives
+    # Residential co-operatives / building complexes
     " society", "co-op hsg", "cooperative housing", " chs ", "co-op society",
     "cooperative society", "apartment", "apartments", "residency", "residences",
-    # Government bodies
+    "grandezza",  # Lodha residential project naming
+    # Government bodies (name-based)
+    "government ", "govt. ", "govt ",
     "municipal corporation", "nagar nigam", "gram panchayat", "panchayat office",
     "kacheri", "tehsildar", "collector office",
+    "training institute",  # usually government ITIs
+    # Public-sector undertakings (PSUs / state utilities)
+    "mseb", "bsnl", "ntpc", "ongc", "iocl", "hpcl", "bpcl", "gail",
+    "sail", "bhel", "mahadiscom", "mahavitaran", "mahatransco",
     # Individual professionals (no staff to gift)
     "interior designer", "interior design", "freelance", "freelancer",
     "photo studio", "wedding photographer", "photographer", "videographer",
@@ -951,6 +977,13 @@ def discover_companies(
     companies = []
     for place in b2b_places:
         domain, phone = _extract_domain(place)
+
+        # Drop government domains (.gov.in / .gov / .nic.in / .mil etc.)
+        # — wastes API credits and they don't buy corporate gifts.
+        if _is_gov_domain(domain):
+            logger.info(f"Discovery: dropped '{place.get('name')}' — gov domain '{domain}'")
+            continue
+
         # Branch / sub-page domains (e.g. branch.bajajlifeinsurance.com) are
         # kept — contacts.py normalizes them to the root domain before Apollo.
         rating = place.get("rating")
