@@ -153,37 +153,6 @@ MIXED_USE_VENUES = [
     "trade centre", "wockhardt towers", "express towers"
 ]
 
-# PRD §6.1 — Types to INCLUDE (corporate/office-type)
-ALLOWED_TYPES = {
-    # Core office / corporate
-    "corporate_office", "office", "accounting", "insurance_agency",
-    "finance", "lawyer", "real_estate_agency",
-    # Logistics / trade
-    "moving_company", "storage", "courier", "freight_forwarder",
-    "warehouse", "manufacturing", "general_contractor", "staffing_agency",
-    # Professional services
-    "consultant", "software_company", "advertising_agency", "marketing",
-    "it_company", "bank",
-    # Extended B2B categories
-    "travel_agency",                   # Corporate travel managers
-    "car_rental",                      # Fleet / corporate transport
-    "association",                     # Trade bodies, industry chambers
-    "coworking_space",                 # Shared offices / business centres
-    "event_management_company",        # Corporate event companies
-    "non_governmental_organization",   # NGOs with sizable employee base
-    "media",                           # Broadcast, news, production
-    "health",                          # Pharma / healthcare corporates (offices, not clinics)
-    "research",                        # R&D institutes, think-tanks
-}
-
-# Types allowed ONLY when the place name also contains a corporate keyword —
-# prevents flooding results with consumer businesses of the same broad type.
-SOFT_ALLOWED_TYPES = {
-    "establishment",
-    "point_of_interest",
-    "car_dealer",      # Fleet/corporate departments at dealerships
-}
-
 # Types to EXCLUDE — non-businesses + low-budget micro retail.
 # We KEEP retail stores, hotels, hospitals, schools (corporate-scale).
 BLOCKLIST_TYPES = {
@@ -208,33 +177,6 @@ BLOCKLIST_TYPES = {
     # Pet / quirky / very small retail
     "pet_store", "laundry", "car_wash", "car_repair",
 }
-
-# Name-based keywords that indicate a corporate / B2B entity
-CORPORATE_KEYWORDS = [
-    # Registered entity suffixes
-    "pvt", "ltd", "llp", "inc", "corp", "limited", "company",
-    # IT / services
-    "technologies", "solutions", "services", "consulting",
-    "software", "systems", "enterprises", "industries",
-    # Org structure words
-    "group", "associates", "partners", "foundation",
-    "capital", "ventures", "investments", "financial",
-    "management", "global", "international", "india",
-    # Manufacturing / trade
-    "manufacturer", "manufacturing", "exports", "imports", "trading",
-    # Extended verticals
-    "pharma", "pharmaceutical", "healthcare",
-    "media", "productions", "broadcast", "studios",
-    "textiles", "textile", "apparel", "garments",
-    "automotive", "motors", "vehicles",
-    "logistics", "freight", "cargo", "shipping",
-    "academy", "institute", "training",
-    "ngo", "trust", "society",
-    "realty", "developers", "construction",
-    "nbfc", "microfinance", "telecom",
-    "energy", "power", "solar",
-    "fmcg", "beverages",
-]
 
 # Industry value key -> search terms for complex text search
 INDUSTRY_KEYWORDS = {
@@ -631,16 +573,22 @@ NAME_BLOCKLIST_PATTERNS = [
 
 def _is_b2b_company(place: dict) -> bool:
     """
-    Permissive filter — includes ALL businesses (B2B + B2C) unless clearly
-    non-business. Rejects only:
+    Permissive filter — includes businesses (B2B + B2C corporate-scale)
+    unless clearly non-business or too small for corporate gifting.
+    Rejects:
       - Residential complexes (societies, apartments)
       - Government bodies (municipal corp, panchayat, etc.)
       - Religious places (church, temple, mosque)
-      - Civic infrastructure (parks, ATMs, post office, police, fire)
-      - Natural features (lakes, mountains)
-      - Junk listings (handled separately via _is_junk_listing)
-    Everything else — retail shops, restaurants, hotels, salons, individual
-    professionals, branch offices, etc. — is a valid outreach target.
+      - Civic infrastructure (ATMs, post office, police, fire, gas stations)
+      - Natural features / leisure (parks, tourist spots, stadiums)
+      - Micro food retail (cafes, restaurants, tea stalls)
+      - Personal care (salons, spas, gyms, barbers)
+      - Individual professionals (photographers, interior designers, tailors)
+    Accepted:
+      - Retail chains (jewellery, watches, electronics, supermarkets)
+      - Corporate-scale (hotels, hospitals, schools, banks)
+      - Branch offices (insurance, gold loan, NBFC)
+      - All registered companies (Pvt Ltd, LLP, etc.)
     """
     place_types = set(place.get("types", []))
     name_lower = place.get("name", "").lower()
