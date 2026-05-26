@@ -12,7 +12,6 @@ import logging
 import os
 from dotenv import load_dotenv
 import tldextract
-from urllib.parse import urlparse
 from cleaning import clean_contact_data
 
 load_dotenv()
@@ -128,6 +127,7 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     # ── Step 2: Filter by role, then unlock emails via bulk_match ─────────────
     # Build candidate list — Apollo returns obfuscated names + title in search
     qualifying = []
+    step1_linkedin = {}  # person_id → linkedin_url from Step 1 results
     for p in all_people:
         title = p.get("title", "") or ""
         priority = _role_priority(title)
@@ -138,6 +138,10 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         first_name = p.get("first_name", "") or ""
         last_name_obf = p.get("last_name_obfuscated", "") or ""
         person_id = p.get("id", "")
+
+        # Preserve LinkedIn URL from Step 1 — bulk_match sometimes omits it
+        if person_id and p.get("linkedin_url"):
+            step1_linkedin[person_id] = p["linkedin_url"]
 
         qualifying.append({
             "id": person_id,
@@ -189,7 +193,9 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
             continue
 
         # Extract extra fields from Apollo match object
-        linkedin_url = match.get("linkedin_url", "")
+        # Fall back to Step 1 linkedin_url if bulk_match omits it
+        person_id_match = match.get("id", "")
+        linkedin_url = match.get("linkedin_url", "") or step1_linkedin.get(person_id_match, "")
         seniority = match.get("seniority", "")
         city = match.get("city", "")
         state = match.get("state", "")
