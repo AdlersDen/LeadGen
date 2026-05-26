@@ -166,7 +166,7 @@ export default function Discover() {
   const handleComplexInput = (val) => {
     setComplexName(val);
     setComplexError('');
-    setSearchHint(val.trim() ? `Will search: "corporate offices in ${val.trim()}"` : "");
+    setSearchHint(val.trim() ? `Will search: "companies in ${val.trim()}"` : "");
     if (val.length >= 2) {
       const q = val.toLowerCase();
       setSuggestions(COMPLEXES.filter((s) => s.toLowerCase().includes(q)).slice(0, 8));
@@ -298,8 +298,8 @@ export default function Discover() {
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
           {searchMode === 'pincode'
-            ? 'Enter a 6-digit pincode to discover B2B companies in the area'
-            : 'Search by business complex or area name to find corporate tenants'}
+            ? 'Enter a 6-digit pincode to discover companies in the area'
+            : 'Search by business complex or area name to find companies inside it'}
         </p>
       </div>
 
@@ -407,7 +407,7 @@ export default function Discover() {
                           setComplexName(s);
                           setShowSuggestions(false);
                           setComplexError('');
-                          setSearchHint(`Will search: "corporate offices in ${s}"`);
+                          setSearchHint(`Will search: "companies in ${s}"`);
                         }}
                       >
                         <Building className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -434,7 +434,7 @@ export default function Discover() {
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Search any business park, IT park, or commercial district worldwide. Google Maps will return corporate tenants inside it.
+              Search any business park, IT park, commercial district, or area. Google Maps will return all companies inside it.
             </p>
             {searchHint && (
               <p className="text-xs text-muted-foreground/80 mt-1 flex items-center gap-1">
@@ -536,7 +536,7 @@ export default function Discover() {
                   Discovering companies{searchMode === 'pincode' ? ` near ${pincode}` : ` in ${complexName}`}…
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Querying Google Maps, filtering B2B businesses, saving to database
+                  Querying Google Maps, identifying companies, saving to database
                 </p>
               </div>
             </div>

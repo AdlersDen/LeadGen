@@ -1,8 +1,8 @@
 // @ts-nocheck
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
-import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp, Clock, Linkedin, MapPin } from 'lucide-react';
+import { Search, Loader2, Zap, Building2, ChevronDown, ChevronUp, Clock, Linkedin, MapPin, Layers, Phone } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,8 +19,38 @@ export default function Contacts() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [extractProgress, setExtractProgress] = useState(null); // { total, remaining, pct }
   const [extractionAlert, setExtractionAlert] = useState(null);
+  const [groupByRole, setGroupByRole] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const pollRef = useRef(null);
   const queryClient = useQueryClient();
+
+  // ── Role grouping config ───────────────────────────────────────────────────
+  const ROLE_GROUPS = [
+    { key: 'hr',         label: 'HR & People',         keywords: ['hr', 'human resource', 'chro', 'people', 'culture', 'employee experience', 'employee engagement', 'reward', 'benefit'] },
+    { key: 'marketing',  label: 'Marketing & Brand',   keywords: ['marketing', 'cmo', 'brand', 'growth', 'communication', 'pr', 'public relation'] },
+    { key: 'admin',      label: 'Admin & Procurement', keywords: ['admin', 'office manager', 'procurement', 'purchase', 'vendor', 'facility', 'facilities', 'workplace'] },
+    { key: 'sales',      label: 'Sales & BD',          keywords: ['sales', 'cro', 'chief revenue officer', 'business development', 'bd', 'client success', 'customer success'] },
+    { key: 'operations', label: 'Operations',          keywords: ['operation', 'coo', 'chief operating officer'] },
+    { key: 'executive',  label: 'Leadership & Founders', keywords: ['ceo', 'founder', 'owner', 'managing director', 'md', 'director'] },
+  ];
+
+  const PERSONAL_EMAIL_DOMAINS = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'yahoo.co.in', 'rediffmail.com', 'live.com']);
+
+  const getRoleGroup = (role) => {
+    const r = (role || '').toLowerCase();
+    for (const g of ROLE_GROUPS) {
+      if (g.keywords.some(k => r.includes(k))) return g.key;
+    }
+    return 'other';
+  };
+
+  const toggleGroup = (key) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
 
   // ── Contacts list ──────────────────────────────────────────────────────────
   const { data: contacts = [], isLoading } = useQuery({
@@ -135,7 +165,104 @@ export default function Contacts() {
     );
   });
 
+  const groupedContacts = useMemo(() => {
+    if (!groupByRole) return null;
+    const groups = {};
+    ROLE_GROUPS.forEach(g => { groups[g.key] = []; });
+    groups['other'] = [];
+    filtered.forEach(c => {
+      const role = c.role || c['Role'] || '';
+      groups[getRoleGroup(role)].push(c);
+    });
+    return groups;
+  }, [filtered, groupByRole]);
+
   const tierColors = { A: 'text-emerald-600 font-bold', B: 'text-amber-600 font-semibold' };
+
+  const renderContactRow = (contact, idx) => {
+    const id         = contact.id            || contact['ID']             || idx;
+    const fullName   = contact.full_name     || contact['Full Name']      || '';
+    const role       = contact.role          || contact['Role']           || '';
+    const company    = contact.company_name  || contact['Company Name']   || '';
+    const email      = contact.email         || contact['Email']          || '';
+    const phone      = contact.phone         || contact['Phone']          || '';
+    const linkedinUrl = contact.linkedin_url || contact['LinkedIn URL']   || '';
+    const location   = contact.location      || contact['Location']       || '';
+    const confidence = contact.confidence_score || contact['Confidence Score'];
+    const status     = contact.status        || contact['Status']         || '';
+    const emailDomain = email.includes('@') ? email.split('@')[1].toLowerCase() : '';
+    const isPersonalEmail = PERSONAL_EMAIL_DOMAINS.has(emailDomain);
+
+    return (
+      <TableRow key={id} className="hover:bg-muted/30">
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-bold text-accent">
+                {fullName?.[0]?.toUpperCase() || '?'}
+              </span>
+            </div>
+            <span className="font-medium text-sm">{fullName || '—'}</span>
+            {cooldownMap[email] && (
+              <span
+                title="Already contacted within 90 days — outreach skipped."
+                className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 cursor-help border border-amber-200 flex-shrink-0"
+              >
+                ⏱ In Cooldown
+              </span>
+            )}
+          </div>
+        </TableCell>
+        <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
+        <TableCell className="text-sm">{company || '—'}</TableCell>
+        <TableCell className="text-sm">
+          <span className={isPersonalEmail ? 'text-amber-600' : 'text-muted-foreground'}>
+            {email || '—'}
+          </span>
+          {isPersonalEmail && email && (
+            <span className="ml-1 text-[10px] text-amber-500 font-medium">(personal)</span>
+          )}
+        </TableCell>
+        <TableCell>
+          {phone ? (
+            <a href={`tel:${phone}`}
+               className="text-sm text-blue-600 hover:text-blue-800 transition-colors whitespace-nowrap flex items-center gap-1">
+              <Phone className="w-3 h-3 flex-shrink-0" />{phone}
+            </a>
+          ) : <span className="text-muted-foreground">—</span>}
+        </TableCell>
+        <TableCell>
+          {location ? (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <MapPin className="w-3 h-3 flex-shrink-0" />{location}
+            </span>
+          ) : '—'}
+        </TableCell>
+        <TableCell>
+          {linkedinUrl ? (
+            <a href={linkedinUrl} target="_blank" rel="noopener noreferrer"
+               className="text-blue-600 hover:text-blue-800 transition-colors">
+              <Linkedin className="w-4 h-4" />
+            </a>
+          ) : '—'}
+        </TableCell>
+        <TableCell>
+          {confidence ? (
+            <span
+              className={`text-xs font-semibold ${
+                confidence >= 70 ? 'text-emerald-600'
+                : confidence >= 50 ? 'text-amber-600'
+                : 'text-red-600'
+              }`}
+            >
+              {confidence}%
+            </span>
+          ) : '—'}
+        </TableCell>
+        <TableCell><StatusBadge status={status} /></TableCell>
+      </TableRow>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -289,14 +416,25 @@ export default function Contacts() {
       )}
 
       {/* ── Contacts search & table ───────────────────────────────────────── */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search contacts..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search contacts..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Button
+          variant={groupByRole ? 'default' : 'outline'}
+          size="sm"
+          className="gap-2 flex-shrink-0"
+          onClick={() => setGroupByRole(v => !v)}
+        >
+          <Layers className="w-4 h-4" />
+          {groupByRole ? 'Flat View' : 'Group by Role'}
+        </Button>
       </div>
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
@@ -307,6 +445,7 @@ export default function Contacts() {
               <TableHead>Role</TableHead>
               <TableHead>Company</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>LinkedIn</TableHead>
               <TableHead>Confidence</TableHead>
@@ -317,85 +456,45 @@ export default function Contacts() {
             {isLoading ? (
               Array(5).fill(0).map((_, i) => (
                 <TableRow key={i}>
-                  {Array(8).fill(0).map((_, j) => (
+                  {Array(9).fill(0).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-4 w-24" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                   No contacts found
                 </TableCell>
               </TableRow>
-            ) : (
-              filtered.map((contact, idx) => {
-                const id         = contact.id           || contact['ID']             || idx;
-                const fullName   = contact.full_name    || contact['Full Name']      || '';
-                const role       = contact.role         || contact['Role']           || '';
-                const company    = contact.company_name || contact['Company Name']   || '';
-                const email      = contact.email        || contact['Email']          || '';
-                const linkedinUrl = contact.linkedin_url || contact['LinkedIn URL']  || '';
-                const seniority  = contact.seniority    || contact['Seniority']      || '';
-                const location   = contact.location     || contact['Location']       || '';
-                const confidence = contact.confidence_score || contact['Confidence Score'];
-                const status     = contact.status       || contact['Status']         || '';
-
-                return (
-                  <TableRow key={id} className="hover:bg-muted/30">
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-accent">
-                            {fullName?.[0]?.toUpperCase() || '?'}
-                          </span>
-                        </div>
-                        <span className="font-medium text-sm">{fullName || '—'}</span>
-                        {cooldownMap[email] && (
-                          <span
-                            title="Already contacted within 90 days — outreach skipped."
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 cursor-help border border-amber-200 flex-shrink-0"
-                          >
-                            ⏱ In Cooldown
-                          </span>
-                        )}
+            ) : groupByRole && groupedContacts ? (
+              [...ROLE_GROUPS, { key: 'other', label: 'Other' }].flatMap(group => {
+                const groupContacts = groupedContacts[group.key];
+                if (!groupContacts || groupContacts.length === 0) return [];
+                const isCollapsed = collapsedGroups.has(group.key);
+                return [
+                  <TableRow
+                    key={`group-${group.key}`}
+                    className="bg-muted/60 cursor-pointer hover:bg-muted/80 select-none"
+                    onClick={() => toggleGroup(group.key)}
+                  >
+                    <TableCell colSpan={9} className="py-2 px-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                        {isCollapsed
+                          ? <ChevronDown className="w-4 h-4" />
+                          : <ChevronUp className="w-4 h-4" />}
+                        {group.label}
+                        <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                          {groupContacts.length}
+                        </Badge>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
-                    <TableCell className="text-sm">{company || '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{email || '—'}</TableCell>
-                    <TableCell>
-                      {location ? (
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <MapPin className="w-3 h-3 flex-shrink-0" />{location}
-                        </span>
-                      ) : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {linkedinUrl ? (
-                        <a href={linkedinUrl} target="_blank" rel="noopener noreferrer"
-                           className="text-blue-600 hover:text-blue-800 transition-colors">
-                          <Linkedin className="w-4 h-4" />
-                        </a>
-                      ) : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {confidence ? (
-                        <span
-                          className={`text-xs font-semibold ${
-                            confidence >= 70 ? 'text-emerald-600'
-                            : confidence >= 50 ? 'text-amber-600'
-                            : 'text-red-600'
-                          }`}
-                        >
-                          {confidence}%
-                        </span>
-                      ) : '—'}
-                    </TableCell>
-                    <TableCell><StatusBadge status={status} /></TableCell>
-                  </TableRow>
-                );
+                  </TableRow>,
+                  ...(!isCollapsed ? groupContacts.map((contact, idx) => renderContactRow(contact, idx)) : []),
+                ];
               })
+            ) : (
+              filtered.map((contact, idx) => renderContactRow(contact, idx))
             )}
           </TableBody>
         </Table>

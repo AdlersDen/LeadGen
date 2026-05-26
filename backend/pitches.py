@@ -19,7 +19,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
+SENDER_NAME    = os.getenv("SENDER_NAME", "The Adler's Den Team")
 
 # --- Simple in-memory cache (hash → result) ---
 _pitch_cache: dict[str, dict] = {}
@@ -38,7 +39,7 @@ As {role} at {company}, I imagine you're always looking for meaningful ways to b
 Would you be open to a quick 15-minute call this week?
 
 Warm Regards,
-The Adler's Den Team
+{sender_name}
 """
 
 
@@ -88,24 +89,62 @@ def _get_company_intel(domain: str) -> str:
         logger.warning(f"Failed to fetch company intel for {domain}: {e}")
         return ""
 
-def _build_prompt(contact_name: str, role: str, company_name: str, company_intel: str = "") -> str:
-    """Builds the Gemini prompt exactly as specified in PRD §6.4."""
-    return f"""You are an expert B2B sales copywriter. Write a cold outreach email for Adler's Den, a premium corporate gifting and employee engagement company.
+def _build_prompt(contact_name: str, role: str, company_name: str, company_intel: str = "", sender_name: str = "") -> str:
+    """Builds the AI prompt for pitch generation."""
+    first_name = contact_name.split()[0] if contact_name else "there"
+    sign_off_name = sender_name or "The Adler's Den Team"
 
-Target contact: {contact_name}, {role} at {company_name}
-{company_intel}
+    research_instruction = ""
+    if not company_intel:
+        research_instruction = f"""
+Company Research (use your training knowledge):
+- Think about what you know about {company_name}: their industry, size, what they're known for, recent milestones.
+- If you are 100% confident about a specific fact (e.g. they recently IPO'd, they have 10,000+ employees, they operate in a specific sector), weave ONE such fact naturally into the body paragraph.
+- If you are not confident, do NOT invent or guess — just skip the company fact and personalise based on role only.
+"""
+    return f"""You are an expert B2B sales copywriter specialising in corporate gifting. Write a cold outreach email for Adler's Den — a premium corporate gifting company based in Mumbai.
 
-Strict rules:
-1. Under 120 words total (email body only, excluding subject).
-2. Personalize based on the contact's specific role (e.g., HR gets a message about employee recognition, Marketing gets a message about client gifting).
-3. If Company Context is provided, weave 1 relevant fact (like headcount, funding, or industry) naturally into the pitch to show you did your research.
-4. End with a soft CTA—suggest a quick 15-minute call or meeting, NO pressure.
-5. Warm, professional tone. No buzzwords. No generic fluff.
-6. Include a compelling subject line.
-7. Sign off EXACTLY as: "Best regards,
-Adler's Den" -- do NOT use "[Your Name]" or any placeholder.
+What Adler's Den offers:
+- Curated gift hampers and branded merchandise for employee recognition, onboarding, and milestone celebrations
+- Bespoke gifting for client appreciation and business development
+- Festive gifting campaigns, reward trips, and team experiences
+- Custom-branded packaging and personalisation at scale
 
-Return ONLY a valid JSON object with exactly two keys: "subject" and "body". No markdown, no explanations."""
+Target contact: {first_name} ({contact_name}), {role} at {company_name}
+{company_intel}{research_instruction}
+
+ROLE PERSONALISATION — match the pitch angle to the role:
+- HR / People / Culture → employee recognition, onboarding kits, milestone gifting
+- Marketing / Brand / CMO → client gifting, branded hampers, campaign giveaways
+- Admin / Procurement / Office Manager → vendor gifts, festive office gifting, bulk orders
+- Sales / BD / CRO → prospect gifting, deal-closing hampers, client retention
+- Operations / Facilities → team celebrations, office event gifting
+- CEO / Founder / Director → culture-building, leadership rewards, investor/client gifting
+
+EMAIL STRUCTURE — write exactly 3 parts, separated by blank lines:
+
+Part 1 — GREETING + HOOK (1 sentence):
+Start with "Hi {first_name}," on its own line. Then ONE sentence that references something specific about their role or company — make it feel like you did your homework. Do NOT use "I hope this finds you well" or any generic opener.
+
+Part 2 — BODY (2–3 sentences):
+Introduce Adler's Den and connect our offering to their specific role/need. If you have a confident company fact, weave it in here naturally. Keep it conversational — no jargon, no buzzwords.
+
+Part 3 — CTA + SIGN-OFF:
+One soft call-to-action sentence: suggest a quick 15-minute call or offer to send a free sample curation. No pressure. Then on a NEW LINE, write the sign-off EXACTLY as shown — two separate lines:
+
+Warm regards,
+{sign_off_name}
+
+SUBJECT LINE — choose ONE style:
+- Personalised: "{first_name}, a gifting idea for your team at {company_name}"
+- Question: "How does {company_name} reward its people?"
+- Benefit: "A gift your clients will actually remember"
+
+CRITICAL FORMAT RULES:
+- The body value in the JSON must use \\n\\n between each of the 3 parts (blank line between paragraphs).
+- The sign-off must be on its own lines, separated from the CTA by \\n\\n.
+- Do NOT run the sign-off onto the same line as the CTA sentence.
+- Return ONLY a valid JSON object with exactly two keys: "subject" and "body". No markdown, no code fences, no explanation."""
 
 
 def _cache_key(contact_name: str, role: str, company_name: str) -> str:
@@ -147,7 +186,7 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
         logger.warning(f"Could not fetch domain for {company_name}: {e}")
 
     company_intel = _get_company_intel(domain)
-    prompt = _build_prompt(contact_name, role, company_name, company_intel)
+    prompt = _build_prompt(contact_name, role, company_name, company_intel, sender_name=SENDER_NAME)
     pitch = None
 
     # Try Groq first
@@ -162,7 +201,7 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=400,
+                max_tokens=600,
                 response_format={"type": "json_object"}
             )
             
@@ -190,7 +229,7 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
                 generation_config={
                     "response_mime_type": "application/json",
                     "temperature": 0.7,
-                    "max_output_tokens": 400,
+                    "max_output_tokens": 600,
                 },
             )
 
@@ -220,8 +259,8 @@ def generate_pitch(contact_name: str, role: str, company_name: str) -> dict:
 
 
 def _fallback_pitch(contact_name: str, role: str, company_name: str) -> dict:
-    """Returns a safe static template when Gemini is unavailable."""
+    """Returns a safe static template when AI providers are unavailable."""
     first_name = contact_name.split()[0] if contact_name else "there"
     subject = FALLBACK_SUBJECT.format(company=company_name)
-    body = FALLBACK_BODY.format(name=first_name, role=role, company=company_name)
+    body = FALLBACK_BODY.format(name=first_name, role=role, company=company_name, sender_name=SENDER_NAME)
     return {"subject": subject, "body": body}

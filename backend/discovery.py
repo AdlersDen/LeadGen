@@ -153,14 +153,35 @@ MIXED_USE_VENUES = [
     "trade centre", "wockhardt towers", "express towers"
 ]
 
-# PRD §6.1 — Types to INCLUDE (must be corporate/office-type)
+# PRD §6.1 — Types to INCLUDE (corporate/office-type)
 ALLOWED_TYPES = {
+    # Core office / corporate
     "corporate_office", "office", "accounting", "insurance_agency",
     "finance", "lawyer", "real_estate_agency",
+    # Logistics / trade
     "moving_company", "storage", "courier", "freight_forwarder",
     "warehouse", "manufacturing", "general_contractor", "staffing_agency",
+    # Professional services
     "consultant", "software_company", "advertising_agency", "marketing",
-    "it_company", "bank"  # bank added back — remove ATMs by name check instead
+    "it_company", "bank",
+    # Extended B2B categories
+    "travel_agency",                   # Corporate travel managers
+    "car_rental",                      # Fleet / corporate transport
+    "association",                     # Trade bodies, industry chambers
+    "coworking_space",                 # Shared offices / business centres
+    "event_management_company",        # Corporate event companies
+    "non_governmental_organization",   # NGOs with sizable employee base
+    "media",                           # Broadcast, news, production
+    "health",                          # Pharma / healthcare corporates (offices, not clinics)
+    "research",                        # R&D institutes, think-tanks
+}
+
+# Types allowed ONLY when the place name also contains a corporate keyword —
+# prevents flooding results with consumer businesses of the same broad type.
+SOFT_ALLOWED_TYPES = {
+    "establishment",
+    "point_of_interest",
+    "car_dealer",      # Fleet/corporate departments at dealerships
 }
 
 # PRD §6.1 — Types to EXCLUDE explicitly
@@ -172,7 +193,7 @@ BLOCKLIST_TYPES = {
     "hindu_temple", "mosque", "clothing_store", "grocery_or_supermarket",
     "supermarket", "convenience_store", "department_store", "shoe_store",
     "electronics_store", "furniture_store", "jewelry_store", "pet_store",
-    "hardware_store", "book_store", "bicycle_store", "car_dealer",
+    "hardware_store", "book_store", "bicycle_store",
     "car_repair", "car_wash", "gas_station", "parking", "atm",
     "post_office", "local_government_office", "ambulance_station",
     "fire_station", "police", "night_club", "amusement_park", "casino",
@@ -181,15 +202,31 @@ BLOCKLIST_TYPES = {
     "natural_feature", "park", "airport"
 }
 
-# Neutral types that are acceptable (IT parks, business parks, etc.)
+# Name-based keywords that indicate a corporate / B2B entity
 CORPORATE_KEYWORDS = [
+    # Registered entity suffixes
     "pvt", "ltd", "llp", "inc", "corp", "limited", "company",
+    # IT / services
     "technologies", "solutions", "services", "consulting",
     "software", "systems", "enterprises", "industries",
+    # Org structure words
     "group", "associates", "partners", "foundation",
     "capital", "ventures", "investments", "financial",
     "management", "global", "international", "india",
-    "manufacturer", "manufacturing",
+    # Manufacturing / trade
+    "manufacturer", "manufacturing", "exports", "imports", "trading",
+    # Extended verticals
+    "pharma", "pharmaceutical", "healthcare",
+    "media", "productions", "broadcast", "studios",
+    "textiles", "textile", "apparel", "garments",
+    "automotive", "motors", "vehicles",
+    "logistics", "freight", "cargo", "shipping",
+    "academy", "institute", "training",
+    "ngo", "trust", "society",
+    "realty", "developers", "construction",
+    "nbfc", "microfinance", "telecom",
+    "energy", "power", "solar",
+    "fmcg", "beverages",
 ]
 
 # Industry value key -> search terms for complex text search
@@ -612,6 +649,11 @@ def _is_b2b_company(place: dict) -> bool:
     # Hard include based on type
     if place_types & ALLOWED_TYPES:
         return True
+
+    # Soft include — broad types that require a corporate name signal
+    if place_types & SOFT_ALLOWED_TYPES:
+        if any(kw in name_lower for kw in CORPORATE_KEYWORDS):
+            return True
 
     # Heuristic — company name contains a B2B keyword
     if any(kw in name_lower for kw in CORPORATE_KEYWORDS):

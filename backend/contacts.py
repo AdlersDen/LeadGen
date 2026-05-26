@@ -41,6 +41,13 @@ TIER_3_KEYWORDS = [
 # PRD §6.3 — Minimum Hunter.io confidence score
 MIN_CONFIDENCE = 50
 
+# Personal email domains — prefer corporate emails when multiple are available
+PERSONAL_EMAIL_DOMAINS = {
+    'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+    'yahoo.co.in', 'rediffmail.com', 'live.com', 'icloud.com',
+    'protonmail.com', 'zoho.com',
+}
+
 
 def extract_root_domain(url: str) -> str:
     extracted = tldextract.extract(url)
@@ -59,6 +66,29 @@ def _role_priority(title: str) -> int:
     if any(k in title_lower for k in TIER_3_KEYWORDS):
         return 3
     return 99  # Not a target role
+
+
+def _pick_best_email(match: dict) -> str:
+    """Prefer corporate domain emails; fall back to personal if no alternative."""
+    primary = match.get("email", "")
+    all_emails = match.get("emails") or []
+    if not all_emails and primary:
+        all_emails = [{"email": primary}]
+
+    corporate, personal = [], []
+    for entry in all_emails:
+        addr = entry.get("email", "") if isinstance(entry, dict) else str(entry)
+        if not addr or "@" not in addr:
+            continue
+        domain = addr.split("@")[-1].lower()
+        (personal if domain in PERSONAL_EMAIL_DOMAINS else corporate).append(addr)
+
+    if corporate:
+        return corporate[0]
+    if personal:
+        logger.debug(f"Only personal email available: {personal[0]}")
+        return personal[0]
+    return primary
 
 
 def _search_apollo(company_name: str, domain: str) -> list[dict]:
@@ -137,7 +167,11 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         bulk_data = bulk_resp.json()
         matches = bulk_data.get("matches", [])
     except Exception as e:
-        logger.error(f"Apollo.io Step 2 (bulk_match) failed for {company_name}: {e}")
+        try:
+            body = bulk_resp.json()
+        except Exception:
+            body = getattr(bulk_resp, 'text', '')
+        logger.error(f"Apollo.io Step 2 (bulk_match) failed for {company_name}: {e} | Response: {body}")
         return []
 
     # ── Step 3: Build final contact list from unlocked data ───────────────────
@@ -145,7 +179,7 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
     for match in matches:
         if match is None:
             continue
-        email = match.get("email", "")
+        email = _pick_best_email(match)
         if not email:
             continue
 
@@ -162,6 +196,18 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
         location_parts = [p for p in [city, state] if p]
         location = ", ".join(location_parts)
 
+        # Extract phone — prefer direct_dial, fall back to first phone_numbers entry
+        phone = ""
+        direct_dial = match.get("direct_dial") or {}
+        if isinstance(direct_dial, dict):
+            phone = direct_dial.get("sanitized_number") or direct_dial.get("raw_number") or ""
+        if not phone:
+            phone_numbers = match.get("phone_numbers") or []
+            if phone_numbers and isinstance(phone_numbers, list):
+                first_ph = phone_numbers[0]
+                if isinstance(first_ph, dict):
+                    phone = first_ph.get("sanitized_number") or first_ph.get("raw_number") or ""
+
         contacts.append({
             "full_name": match.get("name", ""),
             "email": email,
@@ -172,6 +218,7 @@ def _search_apollo(company_name: str, domain: str) -> list[dict]:
             "linkedin_url": linkedin_url,
             "seniority": seniority,
             "location": location,
+            "phone": phone,
         })
 
     contacts.sort(key=lambda x: x["_priority"])

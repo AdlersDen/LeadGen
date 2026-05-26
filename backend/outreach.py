@@ -258,6 +258,20 @@ def send_email(
 
     Returns: {"success": bool, "message_id": str | None, "error": str | None}
     """
+    # --- Recipient domain diagnostic logging ---
+    _PERSONAL_DOMAINS = {
+        'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+        'yahoo.co.in', 'rediffmail.com', 'live.com', 'icloud.com',
+    }
+    _recipient_domain = to_email.split('@')[-1].lower() if '@' in to_email else ''
+    if _recipient_domain in _PERSONAL_DOMAINS:
+        logger.warning(
+            f"[OUTREACH] Sending to personal email domain '{_recipient_domain}' "
+            f"for {to_email} — consider verifying a corporate email exists in Apollo."
+        )
+    else:
+        logger.info(f"[OUTREACH] Sending to corporate domain '{_recipient_domain}' for {to_email}")
+
     # --- Daily limit check (PRD §6.5 — warm-up: 50/day) ---
     if not _check_daily_limit():
         return {

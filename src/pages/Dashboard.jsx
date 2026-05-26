@@ -119,7 +119,7 @@ export default function Dashboard() {
           </div>
           <h3 className="text-lg font-semibold">Run your first discovery</h3>
           <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
-            Enter a pincode or business complex to discover B2B companies and kick off your outreach pipeline.
+            Enter a pincode or business complex to discover companies and kick off your outreach pipeline.
           </p>
           <Link to="/discover">
             <Button className="mt-5 gap-2" id="dashboard-start-btn">

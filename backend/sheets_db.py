@@ -19,7 +19,7 @@ SHEET_HEADERS = {
     "Contacts": [
         "ID", "Company ID", "Full Name", "Role", "Email",
         "Confidence Score", "Status", "Company Name", "Source", "Created Date",
-        "LinkedIn URL", "Seniority", "Location"
+        "LinkedIn URL", "Seniority", "Location", "Phone"
     ],
     "Outreach Logs": [
         "ID", "Campaign ID", "Contact ID", "Contact Email", "Contact Name",
@@ -399,6 +399,7 @@ class SheetsDB:
             "LinkedIn URL": contact_data.get("linkedin_url", ""),
             "Seniority": contact_data.get("seniority", ""),
             "Location": contact_data.get("location", ""),
+            "Phone": contact_data.get("phone", ""),
         }
         self._append_record(ws, row_data)
         self._invalidate_cache("Contacts")

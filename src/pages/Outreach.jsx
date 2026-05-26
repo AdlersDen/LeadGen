@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/apiClient';
 import {
-  Mail, Send, Loader2, Sparkles, Search, CheckCircle2, AlertCircle
+  Mail, Send, Loader2, Sparkles, Search, CheckCircle2, AlertCircle, Layers, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,9 +21,11 @@ export default function Outreach() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showCompose, setShowCompose] = useState(false);
-  const [pitchData, setPitchData] = useState({}); 
+  const [pitchData, setPitchData] = useState({});
   const [isSendingAll, setIsSendingAll] = useState(false);
   const [sendingProgress, setSendingProgress] = useState(0);
+  const [groupByRole, setGroupByRole] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
 
   const abortControllerRef = useRef(null);
   const queryClient = useQueryClient();
@@ -211,6 +213,43 @@ export default function Outreach() {
   };
 
 
+  // ── Group by Role helpers ─────────────────────────────────────────────────
+
+  const ROLE_GROUPS = [
+    { key: 'hr',          label: 'HR & People',         keywords: ['hr', 'human resource', 'people', 'talent', 'culture', 'recruitment', 'recruiter'] },
+    { key: 'marketing',   label: 'Marketing & Brand',   keywords: ['marketing', 'brand', 'cmo', 'growth', 'communications', 'pr ', 'public relations', 'content'] },
+    { key: 'admin',       label: 'Admin & Procurement',  keywords: ['admin', 'procurement', 'office manager', 'facilities', 'executive assistant', 'ea ', 'secretary'] },
+    { key: 'sales',       label: 'Sales & Business Dev', keywords: ['sales', 'business development', 'bd ', 'account', 'revenue', 'cro', 'partnership'] },
+    { key: 'operations',  label: 'Operations',          keywords: ['operation', 'ops', 'supply chain', 'logistics'] },
+    { key: 'executive',   label: 'Executive',           keywords: ['ceo', 'founder', 'director', 'vp ', 'vice president', 'coo', 'cto', 'president', 'head of', 'managing'] },
+  ];
+
+  const getRoleGroup = (role) => {
+    const r = (role || '').toLowerCase();
+    return ROLE_GROUPS.find(g => g.keywords.some(k => r.includes(k)))?.key || 'other';
+  };
+
+  const toggleGroup = (key) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const groupedContacts = useMemo(() => {
+    const groups = {};
+    ROLE_GROUPS.forEach(g => { groups[g.key] = []; });
+    groups['other'] = [];
+    filteredContacts.forEach(c => {
+      const role = c.role || c['Role'] || '';
+      const gKey = getRoleGroup(role);
+      groups[gKey].push(c);
+    });
+    return groups;
+  }, [filteredContacts]);
+
   // ── Render Helpers ────────────────────────────────────────────────────────
 
   const updatePitch = (id, field, value) => {
@@ -390,14 +429,25 @@ export default function Outreach() {
       </div>
 
       {/* ── Search & Filters ────────────────────────────────────────────── */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search contacts by name, company, or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search contacts by name, company, or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Button
+          variant={groupByRole ? 'default' : 'outline'}
+          size="sm"
+          className="gap-2 whitespace-nowrap"
+          onClick={() => setGroupByRole(g => !g)}
+        >
+          <Layers className="w-4 h-4" />
+          Group by Role
+        </Button>
       </div>
 
       {/* ── Contacts Table (Checklist) ────────────────────────────────────── */}
@@ -444,78 +494,112 @@ export default function Outreach() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredContacts.map((contact, idx) => {
-                  const id         = contact.id           || contact['ID']             || idx;
-                  const fullName   = contact.full_name    || contact['Full Name']      || '';
-                  const role       = contact.role         || contact['Role']           || '';
-                  const company    = contact.company_name || contact['Company Name']   || '';
-                  const email      = contact.email        || contact['Email']          || '';
-                  const confidence = contact.confidence_score || contact['Confidence Score'];
-                  const status     = contact.status       || contact['Status']         || '';
-                  
-                  const emTrimmed  = email.trim();
-                  const isCooldown = !!cooldownMap[emTrimmed];
+                (() => {
+                  const renderContactRow = (contact, idx) => {
+                    const id         = contact.id           || contact['ID']             || idx;
+                    const fullName   = contact.full_name    || contact['Full Name']      || '';
+                    const role       = contact.role         || contact['Role']           || '';
+                    const company    = contact.company_name || contact['Company Name']   || '';
+                    const email      = contact.email        || contact['Email']          || '';
+                    const confidence = contact.confidence_score || contact['Confidence Score'];
+                    const status     = contact.status       || contact['Status']         || '';
 
-                  // Find log to show date
-                  const matchedLog = isCooldown ? logs.find(l => (l.contact_email || l['Contact Email']) === emTrimmed) : null;
-                  const logDate = matchedLog ? (matchedLog.sent_date || matchedLog['Timestamp'] || matchedLog.created_date) : null;
+                    const emTrimmed  = email.trim();
+                    const isCooldown = !!cooldownMap[emTrimmed];
 
-                  return (
-                    <TableRow key={id} className={`hover:bg-muted/30 ${isCooldown ? 'opacity-60 bg-muted/10' : ''}`}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedIds.has(id)}
-                          onCheckedChange={(checked) => toggleOne(checked, id)}
-                          disabled={isCooldown}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-bold text-accent">
-                              {fullName?.[0]?.toUpperCase() || '?'}
+                    const matchedLog = isCooldown ? logs.find(l => (l.contact_email || l['Contact Email']) === emTrimmed) : null;
+                    const logDate = matchedLog ? (matchedLog.sent_date || matchedLog['Timestamp'] || matchedLog.created_date) : null;
+
+                    return (
+                      <TableRow key={id} className={`hover:bg-muted/30 ${isCooldown ? 'opacity-60 bg-muted/10' : ''}`}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(id)}
+                            onCheckedChange={(checked) => toggleOne(checked, id)}
+                            disabled={isCooldown}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-bold text-accent">
+                                {fullName?.[0]?.toUpperCase() || '?'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="font-medium text-sm block">{fullName || '—'}</span>
+                              <span className="text-xs text-muted-foreground block">{email}</span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
+                        <TableCell className="text-sm font-medium">{company || '—'}</TableCell>
+                        <TableCell>
+                          {confidence ? (
+                            <span
+                              className={`text-xs font-semibold ${
+                                confidence >= 70 ? 'text-emerald-600'
+                                : confidence >= 50 ? 'text-amber-600'
+                                : 'text-red-600'
+                              }`}
+                            >
+                              {confidence}%
                             </span>
+                          ) : '—'}
+                        </TableCell>
+                        <TableCell>
+                          {isCooldown ? (
+                            <div className="inline-flex flex-col gap-1">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">
+                                ⏱ Already Sent
+                              </span>
+                              {logDate && (
+                                <span className="text-[10px] text-muted-foreground ml-1">
+                                  {format(new Date(logDate), 'MMM d, yyyy')}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <StatusBadge status={status} />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  };
+
+                  if (!groupByRole) {
+                    return filteredContacts.map((contact, idx) => renderContactRow(contact, idx));
+                  }
+
+                  const allGroupDefs = [...ROLE_GROUPS, { key: 'other', label: 'Other' }];
+                  return allGroupDefs.flatMap(({ key, label }) => {
+                    const group = groupedContacts[key] || [];
+                    if (group.length === 0) return [];
+                    const isCollapsed = collapsedGroups.has(key);
+                    const groupSelectableCount = group.filter(c => !cooldownMap[(c.email || c['Email'] || '').trim()]).length;
+                    return [
+                      <TableRow
+                        key={`group-${key}`}
+                        className="bg-muted/50 hover:bg-muted/70 cursor-pointer select-none border-t border-border"
+                        onClick={() => toggleGroup(key)}
+                      >
+                        <TableCell colSpan={6} className="py-2 px-4">
+                          <div className="flex items-center gap-2">
+                            {isCollapsed
+                              ? <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                              : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                            <span className="font-semibold text-sm">{label}</span>
+                            <Badge variant="secondary" className="text-xs">{group.length}</Badge>
+                            {groupSelectableCount < group.length && (
+                              <span className="text-xs text-muted-foreground">({group.length - groupSelectableCount} on cooldown)</span>
+                            )}
                           </div>
-                          <div>
-                            <span className="font-medium text-sm block">{fullName || '—'}</span>
-                            <span className="text-xs text-muted-foreground block">{email}</span>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{role || '—'}</TableCell>
-                      <TableCell className="text-sm font-medium">{company || '—'}</TableCell>
-                      <TableCell>
-                        {confidence ? (
-                          <span
-                            className={`text-xs font-semibold ${
-                              confidence >= 70 ? 'text-emerald-600'
-                              : confidence >= 50 ? 'text-amber-600'
-                              : 'text-red-600'
-                            }`}
-                          >
-                            {confidence}%
-                          </span>
-                        ) : '—'}
-                      </TableCell>
-                      <TableCell>
-                        {isCooldown ? (
-                           <div className="inline-flex flex-col gap-1">
-                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">
-                               ⏱ Already Sent
-                             </span>
-                             {logDate && (
-                               <span className="text-[10px] text-muted-foreground ml-1">
-                                 {format(new Date(logDate), 'MMM d, yyyy')}
-                               </span>
-                             )}
-                           </div>
-                        ) : (
-                           <StatusBadge status={status} />
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                        </TableCell>
+                      </TableRow>,
+                      ...(isCollapsed ? [] : group.map((contact, idx) => renderContactRow(contact, idx))),
+                    ];
+                  });
+                })()
               )}
             </TableBody>
           </Table>
