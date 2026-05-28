@@ -582,6 +582,8 @@ NAME_BLOCKLIST_PATTERNS = [
     "municipal corporation", "nagar nigam", "gram panchayat", "panchayat office",
     "kacheri", "tehsildar", "collector office",
     "training institute",  # usually government ITIs
+    "tourism development", "tourism corporation", "tourism board",  # state govt tourism bodies
+    "officers colony", "officers' colony",  # military/police residential colonies
     # Public-sector undertakings (PSUs / state utilities)
     "mseb", "bsnl", "ntpc", "ongc", "iocl", "hpcl", "bpcl", "gail",
     "sail", "bhel", "mahadiscom", "mahavitaran", "mahatransco",
@@ -589,6 +591,10 @@ NAME_BLOCKLIST_PATTERNS = [
     "interior designer", "interior design", "freelance", "freelancer",
     "photo studio", "wedding photographer", "photographer", "videographer",
     "tailor", "tailoring", "boutique",
+    # Micro retail — small B2C shops with no procurement budget
+    # Note: "jewellers" catches small retail shops like "Tikamdas Motiram Jewellers"
+    # while allowing corporate gems/diamonds cos like "Rio Tinto Diamonds", "Asian Star Company Ltd"
+    "jewellers",
     # Micro food/beverage retail
     "tiffin", "snack center", "snack centre", "tea stall", "chai stall",
     "juice center", "juice centre", "pan shop", "paan shop",
