@@ -154,7 +154,7 @@ MIXED_USE_VENUES = [
 ]
 
 # Types to EXCLUDE — non-businesses + low-budget micro retail.
-# We KEEP retail stores, hotels, hospitals, schools (corporate-scale).
+# We KEEP retail stores, hotels, hospitals (corporate-scale).
 BLOCKLIST_TYPES = {
     # Religious
     "church", "hindu_temple", "mosque",
@@ -183,6 +183,9 @@ BLOCKLIST_TYPES = {
     "pet_store", "laundry", "car_wash", "car_repair",
     # Individual medical practitioners — 1-person practices, no procurement budget
     "dentist",
+    # Educational institutions — schools and coaching centres have very low
+    # corporate gifting budgets and no procurement teams worth targeting.
+    "school", "primary_school", "secondary_school", "university",
 }
 
 # Domain suffixes that indicate a government / military entity — drop these
@@ -586,6 +589,9 @@ NAME_BLOCKLIST_PATTERNS = [
     "municipal corporation", "nagar nigam", "gram panchayat", "panchayat office",
     "kacheri", "tehsildar", "collector office",
     "training institute",  # usually government ITIs
+    # Small coaching / tuition centres — no procurement budget
+    " classes", "coaching", "tuition", "tutorial",
+    "computer education", "computer institute",
     "tourism development", "tourism corporation", "tourism board",  # state govt tourism bodies
     "officers colony", "officers' colony",  # military/police residential colonies
     # Public-sector undertakings (PSUs / state utilities)
