@@ -181,6 +181,8 @@ BLOCKLIST_TYPES = {
     "beauty_salon", "hair_care", "spa", "gym", "fitness_center",
     # Pet / quirky / very small retail
     "pet_store", "laundry", "car_wash", "car_repair",
+    # Individual medical practitioners — 1-person practices, no procurement budget
+    "dentist",
 }
 
 # Domain suffixes that indicate a government / military entity — drop these
@@ -294,7 +296,7 @@ def _pincode_to_coords(pincode: str) -> tuple:
     return None, None, pincode
 
 
-def _fetch_places(lat: float, lng: float, radius_m: int = 2000, page_token: str = None) -> dict:
+def _fetch_places(lat: float, lng: float, radius_m: int = 2000, page_token: str = None, keyword: str = None) -> dict:
     """Query Google Maps Places API (Nearby Search)."""
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
     params = {
@@ -303,6 +305,8 @@ def _fetch_places(lat: float, lng: float, radius_m: int = 2000, page_token: str 
         "type": "establishment",
         "key": MAPS_API_KEY,
     }
+    if keyword:
+        params["keyword"] = keyword
     if page_token:
         params = {"pagetoken": page_token, "key": MAPS_API_KEY}
     try:
@@ -591,6 +595,7 @@ NAME_BLOCKLIST_PATTERNS = [
     "interior designer", "interior design", "freelance", "freelancer",
     "photo studio", "wedding photographer", "photographer", "videographer",
     "tailor", "tailoring", "boutique",
+    "dr. ", "dr.",  # individual doctors named "Dr. Firstname Lastname"
     # Micro retail — small B2C shops with no procurement budget
     # Note: "jewellers" catches small retail shops like "Tikamdas Motiram Jewellers"
     # while allowing corporate gems/diamonds cos like "Rio Tinto Diamonds", "Asian Star Company Ltd"
@@ -962,21 +967,41 @@ def discover_companies(
         radius_m = radius_km * 1000
         logger.info(f"Discovering near {location_name} ({lat},{lng}), radius={radius_km}km")
 
-        all_places = []
-        data = _fetch_places(lat, lng, radius_m=radius_m)
-        all_places.extend(data.get("results", []))
+        # Build list of keywords to search — one per selected industry.
+        # If no industry filter, do one generic search (previous behaviour).
+        industry_keywords = [
+            INDUSTRY_KEYWORDS[i] for i in (industries or []) if i in INDUSTRY_KEYWORDS
+        ]
+        if not industry_keywords:
+            industry_keywords = [None]  # sentinel → no keyword param
 
-        for _ in range(2):
-            next_token = data.get("next_page_token")
-            if not next_token:
-                break
-            time.sleep(2)
-            data = _fetch_places(lat, lng, radius_m=radius_m, page_token=next_token)
-            all_places.extend(data.get("results", []))
+        seen_ids = set()
+        all_places = []
+
+        for kw in industry_keywords:
+            data = _fetch_places(lat, lng, radius_m=radius_m, keyword=kw)
+            for p in data.get("results", []):
+                pid = p.get("place_id")
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    all_places.append(p)
+
+            for _ in range(2):
+                next_token = data.get("next_page_token")
+                if not next_token:
+                    break
+                time.sleep(2)
+                data = _fetch_places(lat, lng, radius_m=radius_m, page_token=next_token, keyword=kw)
+                for p in data.get("results", []):
+                    pid = p.get("place_id")
+                    if pid and pid not in seen_ids:
+                        seen_ids.add(pid)
+                        all_places.append(p)
 
         b2b_places = [p for p in all_places if _is_b2b_company(p)]
         logger.info(
-            f"Fetched {len(all_places)} total, {len(b2b_places)} B2B-filtered for {pincode}"
+            f"Fetched {len(all_places)} total, {len(b2b_places)} B2B-filtered for {pincode} "
+            f"(industries={industries or 'all'})"
         )
 
     # ── Enrich + apply tier filter ────────────────────────────────────────────
