@@ -1,8 +1,7 @@
 """
 Module 5 — Email Outreach Engine
-Sends personalized emails via SendGrid API with:
+Sends personalized emails via Resend API with:
   - From: marketing@adlersden.com (verified domain: adlersden.com)
-  - Open + click tracking enabled (PRD §6.6)
   - Daily send limit for warm-up compliance (PRD §6.5)
   - Mandatory unsubscribe footer (PRD §6.5)
   - Bounce/delivery error handling
@@ -17,9 +16,9 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-SENDGRID_API_KEY   = os.getenv("SENDGRID_API_KEY")
-FROM_EMAIL         = os.getenv("SENDGRID_FROM_EMAIL", "marketing@adlersden.com")
-FROM_NAME          = os.getenv("SENDGRID_FROM_NAME", "Adler's Den")
+RESEND_API_KEY     = os.getenv("RESEND_API_KEY")
+FROM_EMAIL         = os.getenv("FROM_EMAIL", "marketing@adlersden.com")
+FROM_NAME          = os.getenv("FROM_NAME", "Adler's Den")
 UNSUBSCRIBE_URL    = os.getenv("UNSUBSCRIBE_URL", "https://adlers-den-leadgen.vercel.app/unsubscribe")
 DAILY_SEND_LIMIT   = int(os.getenv("DAILY_SEND_LIMIT", "50"))
 
@@ -34,28 +33,8 @@ SENDER_PHONE  = os.getenv("SENDER_PHONE", "+91 98XXX XXXXX")
 _send_counter: dict[str, int] = {}   # { "YYYY-MM-DD": count }
 
 
-def _format_sendgrid_error(err: Exception) -> str:
-    """Return the most useful SendGrid error message we can extract."""
-    status_code = getattr(err, "status_code", None)
-    body = getattr(err, "body", None)
-
-    body_text = ""
-    if isinstance(body, bytes):
-        body_text = body.decode("utf-8", errors="replace")
-    elif body:
-        body_text = str(body)
-
-    if status_code == 403:
-        hint = (
-            "SendGrid rejected the request with 403 Forbidden. "
-            "Check that the API key has Mail Send permission and that "
-            f"'{FROM_EMAIL}' is a verified sender identity."
-        )
-        return f"{hint} Response: {body_text or str(err)}"
-
-    if body_text:
-        return body_text
-
+def _format_resend_error(err: Exception) -> str:
+    """Return the most useful Resend error message we can extract."""
     return str(err)
 
 
@@ -280,16 +259,14 @@ def send_email(
             "error": f"Daily send limit of {DAILY_SEND_LIMIT} reached. Try again tomorrow or increase DAILY_SEND_LIMIT.",
         }
 
-    if not SENDGRID_API_KEY:
-        logger.error("SENDGRID_API_KEY is not set. Email not sent.")
-        return {"success": False, "message_id": None, "error": "SendGrid API key not configured."}
+    if not RESEND_API_KEY:
+        logger.error("RESEND_API_KEY is not set. Email not sent.")
+        return {"success": False, "message_id": None, "error": "Resend API key not configured."}
 
     try:
-        from sendgrid import SendGridAPIClient
-        from sendgrid.helpers.mail import (
-            Mail, Email, To, Content, HtmlContent,
-            TrackingSettings, ClickTracking, OpenTracking,
-        )
+        import resend
+
+        resend.api_key = RESEND_API_KEY
 
         html_body = build_email_html(
             contact_name=contact_name or to_name,
@@ -300,34 +277,20 @@ def send_email(
             recipient_email=to_email,
         )
 
-        message = Mail(
-            from_email=Email(FROM_EMAIL, FROM_NAME),
-            to_emails=To(to_email, to_name),
-            subject=subject,
-        )
-        message.add_content(Content("text/plain", body))
-        message.add_content(HtmlContent(html_body))
+        response = resend.Emails.send({
+            "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+            "text": body,
+        })
 
-        # --- PRD §6.6 — Enable open + click tracking for analytics ---
-        tracking = TrackingSettings()
-        tracking.click_tracking = ClickTracking(enable=True, enable_text=False)
-        tracking.open_tracking = OpenTracking(enable=True)
-        message.tracking_settings = tracking
-
-        sg = SendGridAPIClient(SENDGRID_API_KEY)
-        response = sg.send(message)
-
-        if response.status_code in (200, 202):
-            message_id = response.headers.get("X-Message-Id", "")
-            logger.info(f"Email sent to {to_email}. SendGrid message_id: {message_id}")
-            _increment_counter()
-            return {"success": True, "message_id": message_id, "error": None}
-        else:
-            error_msg = f"Unexpected SendGrid status: {response.status_code}"
-            logger.error(error_msg)
-            return {"success": False, "message_id": None, "error": error_msg}
+        message_id = response.get("id", "") if isinstance(response, dict) else getattr(response, "id", "")
+        logger.info(f"Email sent to {to_email} via Resend. id: {message_id}")
+        _increment_counter()
+        return {"success": True, "message_id": message_id, "error": None}
 
     except Exception as e:
-        error_message = _format_sendgrid_error(e)
-        logger.error(f"SendGrid dispatch failed for {to_email}: {error_message}")
+        error_message = _format_resend_error(e)
+        logger.error(f"Resend dispatch failed for {to_email}: {error_message}")
         return {"success": False, "message_id": None, "error": error_message}
