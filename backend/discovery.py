@@ -180,7 +180,7 @@ BLOCKLIST_TYPES = {
     # Small wellness / personal care — usually individual operators
     "beauty_salon", "hair_care", "spa", "gym", "fitness_center",
     # Pet / quirky / very small retail
-    "pet_store", "laundry", "car_wash", "car_repair",
+    "pet_store", "laundry", "car_wash", "car_repair", "bicycle_store",
     # Individual medical practitioners — 1-person practices, no procurement budget
     "dentist",
     # Medical facilities — clinics and hospitals are patient-facing, not gifting
@@ -709,11 +709,18 @@ def _extract_domain(place: dict) -> tuple:
         return "", ""
 
 
-# Free-hosting markers — a "website" on these platforms signals a micro business
-# with no real corporate domain. Apollo/Hunter can't find contacts there either.
+# Free-hosting / social / directory markers — a "website" on these platforms
+# signals a micro business with no real corporate domain. Apollo/Hunter can't
+# find contacts there either (they search by corporate domain).
 FREE_HOST_MARKERS = (
     ".page.tl", "business.site", "blogspot.", "wixsite.com",
     "weebly.com", "wordpress.com", "webnode.", "webs.com",
+    "grexa.site", "sites.google.com", "godaddysites.com",
+    # Social profiles used as the "website" (Choice Centre → instagram.com)
+    "instagram.com", "facebook.com", "linkedin.com", "youtube.com",
+    "whatsapp.com", "wa.me",
+    # Directory listings, not company sites
+    "justdial.com", "indiamart.com", "sulekha.com",
 )
 
 
