@@ -154,7 +154,7 @@ MIXED_USE_VENUES = [
 ]
 
 # Types to EXCLUDE — non-businesses + low-budget micro retail.
-# We KEEP retail stores, hotels, hospitals (corporate-scale).
+# We KEEP corporate-scale businesses (banks, pharma, manufacturing, IT, logistics).
 BLOCKLIST_TYPES = {
     # Religious
     "church", "hindu_temple", "mosque",
@@ -183,9 +183,17 @@ BLOCKLIST_TYPES = {
     "pet_store", "laundry", "car_wash", "car_repair",
     # Individual medical practitioners — 1-person practices, no procurement budget
     "dentist",
+    # Medical facilities — clinics and hospitals are patient-facing, not gifting
+    # buyers. Pharma / healthcare COMPANIES survive: they carry only the generic
+    # "health" tag (e.g. Serum Institute, Amoli Organics), never hospital/doctor.
+    "hospital", "doctor",
     # Educational institutions — schools and coaching centres have very low
     # corporate gifting budgets and no procurement teams worth targeting.
     "school", "primary_school", "secondary_school", "university",
+    # Civic amenities
+    "library",
+    # Small B2C retail — costume/clothing shops are individual operators
+    "clothing_store",
 }
 
 # Domain suffixes that indicate a government / military entity — drop these
@@ -588,10 +596,17 @@ NAME_BLOCKLIST_PATTERNS = [
     "government ", "govt. ", "govt ",
     "municipal corporation", "nagar nigam", "gram panchayat", "panchayat office",
     "kacheri", "tehsildar", "collector office",
+    "irrigation",  # govt irrigation departments
+    "seva kendra", "e seva",  # govt citizen-service kiosks (Maha E Seva Kendra)
+    # Public/civic amenities
+    "toilet", "shauchalay",  # Swachh Bharat public toilets
+    "fish market", "vachanalay", "granthalay",  # markets, Marathi libraries
+    "carshed", "car shed", "railway",  # railway infrastructure (Kalwa EMU CarShed)
     "training institute",  # usually government ITIs
     # Small coaching / tuition centres — no procurement budget
     " classes", "coaching", "tuition", "tutorial",
     "computer education", "computer institute",
+    " education",  # coaching franchises like "G-TEC JAIN KEERTI Education"
     "tourism development", "tourism corporation", "tourism board",  # state govt tourism bodies
     "officers colony", "officers' colony",  # military/police residential colonies
     # Public-sector undertakings (PSUs / state utilities)
@@ -602,6 +617,9 @@ NAME_BLOCKLIST_PATTERNS = [
     "photo studio", "wedding photographer", "photographer", "videographer",
     "tailor", "tailoring", "boutique",
     "dr. ", "dr.",  # individual doctors named "Dr. Firstname Lastname"
+    "clinic", "dialysis",  # small medical clinics (name-based, backs up type filter)
+    " travels",  # micro travel agencies ("Shobha Travels"); "Tours & Travel" survives
+    "mechanical works", "welding works",  # one-man workshops
     # Micro retail — small B2C shops with no procurement budget
     # Note: "jewellers" catches small retail shops like "Tikamdas Motiram Jewellers"
     # while allowing corporate gems/diamonds cos like "Rio Tinto Diamonds", "Asian Star Company Ltd"
@@ -684,18 +702,22 @@ def _extract_domain(place: dict) -> tuple:
 def _score_tier(rating, domain: str) -> str:
     """
     Assigns a lead tier based on Google rating and domain availability.
-    Tier A: high-value leads (rating >= 4.0 AND has a domain)
-    Tier B: medium-value leads (rating >= 3.5 OR has a domain)
-    Tier C: low-priority leads (everything else)
+    A domain is MANDATORY for Tier A/B — without a website, contact extraction
+    is impossible (Apollo/Hunter search by domain), so the lead is dead weight.
+    This also stops high-rated non-businesses (public toilets, markets, civic
+    amenities with 4-5 star ratings but no website) from qualifying as Tier B.
+    Tier A: rating >= 4.0 AND has a domain
+    Tier B: has a domain (any rating)
+    Tier C: no domain
     """
     has_domain = bool(domain and domain.strip())
     rating = rating or 0.0
 
-    if rating >= 4.0 and has_domain:
+    if not has_domain:
+        return "C"
+    if rating >= 4.0:
         return "A"
-    if rating >= 3.5 or has_domain:
-        return "B"
-    return "C"
+    return "B"
 
 
 def discover_companies(
