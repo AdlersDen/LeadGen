@@ -196,12 +196,15 @@ BLOCKLIST_TYPES = {
     "clothing_store",
 }
 
-# Domain suffixes that indicate a government / military entity — drop these
-# at the enrichment step so we don't waste API credits trying to extract
-# contacts from .gov.in / .gov / .mil etc.
+# Domain suffixes that indicate a government / military / academic / NGO entity —
+# drop these at the enrichment step so we don't waste API credits trying to
+# extract contacts. .ac.in is restricted to academic institutions in India;
+# .org.in is used by NGOs and statutory commissions, never private companies.
 GOV_DOMAIN_SUFFIXES = (
     ".gov.in", ".gov", ".gov.uk", ".gov.au", ".gov.ca",
     ".mil", ".mil.in", ".nic.in",
+    ".ac.in", ".edu", ".edu.in",   # universities (mu.ac.in)
+    ".org.in",                     # NGOs / statutory bodies (mscw.org.in)
 )
 
 
@@ -598,6 +601,9 @@ NAME_BLOCKLIST_PATTERNS = [
     "kacheri", "tehsildar", "collector office",
     "irrigation",  # govt irrigation departments
     "seva kendra", "e seva",  # govt citizen-service kiosks (Maha E Seva Kendra)
+    "commission for", "state commission",  # statutory commissions (MSCW)
+    "corporation of india",  # PSUs: ECGC, Food/Shipping Corporation of India
+    "technology parks of india",  # STPI — MeitY body present in every IT hub
     # Public/civic amenities
     "toilet", "shauchalay",  # Swachh Bharat public toilets
     "fish market", "vachanalay", "granthalay",  # markets, Marathi libraries
@@ -618,8 +624,12 @@ NAME_BLOCKLIST_PATTERNS = [
     "tailor", "tailoring", "boutique",
     "dr. ", "dr.",  # individual doctors named "Dr. Firstname Lastname"
     "clinic", "dialysis",  # small medical clinics (name-based, backs up type filter)
+    "care center", "care centre", "speciality care", "specialty care",  # clinics
+    # without the "clinic" word ("Dr Panikars Speciality Care Center")
     " travels",  # micro travel agencies ("Shobha Travels"); "Tours & Travel" survives
     "mechanical works", "welding works",  # one-man workshops
+    "gift shop",  # B2C gift retail (Archies) — a competitor, not a buyer
+    "property dealer",  # tiny real-estate brokers ("Prime Property Dealers")
     # Micro retail — small B2C shops with no procurement budget
     # Note: "jewellers" catches small retail shops like "Tikamdas Motiram Jewellers"
     # while allowing corporate gems/diamonds cos like "Rio Tinto Diamonds", "Asian Star Company Ltd"
@@ -699,6 +709,14 @@ def _extract_domain(place: dict) -> tuple:
         return "", ""
 
 
+# Free-hosting markers — a "website" on these platforms signals a micro business
+# with no real corporate domain. Apollo/Hunter can't find contacts there either.
+FREE_HOST_MARKERS = (
+    ".page.tl", "business.site", "blogspot.", "wixsite.com",
+    "weebly.com", "wordpress.com", "webnode.", "webs.com",
+)
+
+
 def _score_tier(rating, domain: str) -> str:
     """
     Assigns a lead tier based on Google rating and domain availability.
@@ -706,11 +724,14 @@ def _score_tier(rating, domain: str) -> str:
     is impossible (Apollo/Hunter search by domain), so the lead is dead weight.
     This also stops high-rated non-businesses (public toilets, markets, civic
     amenities with 4-5 star ratings but no website) from qualifying as Tier B.
-    Tier A: rating >= 4.0 AND has a domain
-    Tier B: has a domain (any rating)
-    Tier C: no domain
+    Free-hosted sites (blogspot, wixsite, business.site...) count as no domain.
+    Tier A: rating >= 4.0 AND has a real domain
+    Tier B: has a real domain (any rating)
+    Tier C: no domain / free-hosted site
     """
     has_domain = bool(domain and domain.strip())
+    if has_domain and any(marker in domain.lower() for marker in FREE_HOST_MARKERS):
+        has_domain = False
     rating = rating or 0.0
 
     if not has_domain:
