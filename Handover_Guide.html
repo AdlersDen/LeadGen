@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Adler's Den — Handover & Usage Guide</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11.5pt;
+    line-height: 1.65;
+    color: #1a1a1a;
+    background: #fff;
+  }
+
+  @page { size: A4; margin: 2cm 2cm 2cm 2.2cm; }
+
+  @media print {
+    .page-break { page-break-after: always; }
+    .no-break { page-break-inside: avoid; }
+  }
+
+  .page { max-width: 21cm; margin: 0 auto; padding: 1.8cm 2cm; }
+
+  /* ── Cover header ── */
+  .cover {
+    border-bottom: 4px solid #2C1810;
+    padding-bottom: 24px;
+    margin-bottom: 28px;
+  }
+  .cover .brand {
+    font-size: 11pt;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #8B4513;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .cover h1 {
+    font-size: 26pt;
+    color: #2C1810;
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+  .cover .subtitle {
+    font-size: 12.5pt;
+    color: #555;
+  }
+  .cover .meta {
+    margin-top: 14px;
+    font-size: 10pt;
+    color: #777;
+  }
+
+  h2 {
+    font-size: 15pt;
+    color: #2C1810;
+    border-bottom: 2px solid #d8cfc4;
+    padding-bottom: 5px;
+    margin: 28px 0 12px;
+  }
+  h2 .step-num {
+    display: inline-block;
+    background: #2C1810;
+    color: #fff;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-size: 12pt;
+    margin-right: 10px;
+  }
+  h3 {
+    font-size: 12pt;
+    color: #2C1810;
+    margin: 18px 0 8px;
+  }
+
+  p { margin-bottom: 10px; }
+  ul, ol { margin: 6px 0 12px 1.6em; }
+  li { margin-bottom: 5px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5pt;
+    margin: 12px 0 18px;
+  }
+  th {
+    background: #2C1810;
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+  }
+  td {
+    padding: 7px 10px;
+    border: 1px solid #ccc;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #faf7f2; }
+
+  code {
+    font-family: "Courier New", monospace;
+    font-size: 10pt;
+    background: #f4efe8;
+    border: 1px solid #ddd2c4;
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
+
+  .callout {
+    border-left: 4px solid #8B4513;
+    background: #FAF7F2;
+    padding: 12px 16px;
+    margin: 14px 0;
+    font-size: 11pt;
+  }
+  .callout.warn {
+    border-left-color: #b45309;
+    background: #fef8ec;
+  }
+  .callout strong { color: #2C1810; }
+
+  .url-box {
+    background: #2C1810;
+    color: #FAF7F2;
+    font-family: "Courier New", monospace;
+    font-size: 11pt;
+    padding: 10px 16px;
+    border-radius: 4px;
+    margin: 8px 0 14px;
+    letter-spacing: 0.3px;
+  }
+
+  .footer {
+    margin-top: 36px;
+    border-top: 1px solid #ccc;
+    padding-top: 12px;
+    font-size: 9.5pt;
+    color: #888;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ═══════════════ COVER ═══════════════ -->
+<div class="cover">
+  <div class="brand">Adler's Den · Corporate Gifting</div>
+  <h1>Lead Intelligence App<br>Handover &amp; Usage Guide</h1>
+  <div class="subtitle">Everything you need to operate the platform — from starting it up to sending your first outreach email.</div>
+  <div class="meta">Version 1.0 &nbsp;·&nbsp; July 2026 &nbsp;·&nbsp; For internal use by the Adler's Den team</div>
+</div>
+
+<!-- ═══════════════ WHAT IT DOES ═══════════════ -->
+<h2>What This App Does</h2>
+<p>The platform automates B2B lead generation in three stages:</p>
+<ol>
+  <li><strong>Discover</strong> — finds companies near a pincode or inside a business complex (via Google Maps)</li>
+  <li><strong>Extract</strong> — finds verified decision-maker contacts at those companies: HR, Marketing, Admin, Procurement (via Apollo.io)</li>
+  <li><strong>Outreach</strong> — sends personalised emails from <code>marketing@adlersden.com</code> (via Resend)</li>
+</ol>
+<p>All data is stored in a Google Sheet you can open and read at any time — no database knowledge needed.</p>
+
+<!-- ═══════════════ STARTING ═══════════════ -->
+<h2><span class="step-num">1</span>Starting the App — Do This Every Time</h2>
+
+<div class="callout warn">
+  <strong>Important:</strong> The app has two parts, and they must be started in this order. If you skip Step A, the app will look fine but every button will silently fail or time out.
+</div>
+
+<h3>Step A — Wake up the backend (Render)</h3>
+<p>The backend server sleeps after 15 minutes of inactivity to save cost. Wake it first:</p>
+<ol>
+  <li>Open this URL in your browser:</li>
+</ol>
+<div class="url-box">https://adlers-den-leadgen.onrender.com/health</div>
+<ol start="2">
+  <li>Wait until the page shows: <code>{"status": "ok", "message": "Adler's Den backend is running!"}</code></li>
+  <li>This takes <strong>30–90 seconds</strong> on first load. Be patient — the server is booting.</li>
+</ol>
+
+<h3>Step B — Open the frontend (Vercel)</h3>
+<p>Once the backend responds, open the app itself:</p>
+<div class="url-box">https://adlersden-leadgen.vercel.app</div>
+<p>You'll land on the Dashboard. The app is now ready to use.</p>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════ WORKFLOW ═══════════════ -->
+<h2><span class="step-num">2</span>Discover Companies</h2>
+<p><strong>Where:</strong> Sidebar → <strong>Discover</strong></p>
+
+<table class="no-break">
+  <tr><th>Search Mode</th><th>When to Use</th><th>Example Input</th></tr>
+  <tr><td><strong>Pincode</strong></td><td>Find all B2B companies in an area</td><td><code>400051</code> (BKC)</td></tr>
+  <tr><td><strong>Complex / Building</strong></td><td>Target one office building or IT park</td><td><code>Maker Chambers</code>, <code>Mindspace Malad</code></td></tr>
+</table>
+
+<p><strong>Optional filters:</strong></p>
+<ul>
+  <li><strong>Industry</strong> — pick one or more (Event Management, Finance, IT/Tech…). Leave blank to search all industries.</li>
+  <li><strong>Company Tier</strong> — keep the default <strong>A + B</strong>.
+    Tier A = good rating and a real website. Tier B = has a website. Tier C = no website (these can't have contacts extracted, so they're excluded by default).</li>
+</ul>
+<p>Click <strong>Discover</strong>, wait ~20 seconds, and review the company cards. The app automatically filters out residential societies, government offices, schools, clinics, restaurants, and micro-shops — you should only see real businesses.</p>
+
+<h2><span class="step-num">3</span>Extract Contacts</h2>
+<p><strong>Where:</strong> Sidebar → <strong>Contacts</strong> → click the <strong>Extract Contacts</strong> button (top-right)</p>
+<ol>
+  <li>A panel opens listing companies that haven't been processed yet</li>
+  <li>Tick the companies you want (or "Select All") — <strong>maximum 20 per run</strong></li>
+  <li>Click <strong>Extract for Selected</strong></li>
+  <li>Wait — roughly <strong>5–8 seconds per company</strong>. Keep the tab open while the progress bar runs.</li>
+</ol>
+<p>The app finds up to <strong>3 decision-makers per company</strong>, prioritising HR, Marketing, Admin and Procurement roles. Every email is verified (MX check) before saving. Contacts appear in the table with role, email, phone, location, LinkedIn and a confidence score.</p>
+<div class="callout">
+  <strong>Tip:</strong> Use the <strong>Group by Role</strong> button next to the search bar to organise the table into sections — HR &amp; People, Marketing &amp; Brand, Admin &amp; Procurement, etc. Amber "(personal)" tags mark Gmail/Yahoo addresses.
+</div>
+
+<h2><span class="step-num">4</span>Send Outreach Emails</h2>
+<p><strong>Where:</strong> Sidebar → <strong>Outreach</strong></p>
+<ol>
+  <li>Select the contacts you want to email</li>
+  <li>Review the pre-filled subject and body — you can edit freely, or use the AI-generated pitch</li>
+  <li>Click <strong>Send</strong></li>
+</ol>
+<p>Emails go out from <code>marketing@adlersden.com</code> with the branded Adler's Den template, a "Schedule a Call" button, and the mandatory unsubscribe footer.</p>
+
+<div class="callout no-break">
+  <strong>Built-in safety rules (you don't need to manage these):</strong>
+  <ul style="margin-bottom:0">
+    <li><strong>90-day cooldown</strong> — the same person can't be emailed twice within 90 days ("In Cooldown" badge)</li>
+    <li><strong>Daily limit: 50 emails/day</strong> — protects the sender reputation</li>
+    <li><strong>Unsubscribe blocklist</strong> — anyone who opts out is never emailed again</li>
+  </ul>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ═══════════════ MONITORING ═══════════════ -->
+<h2><span class="step-num">5</span>Monitoring &amp; Data</h2>
+<ul>
+  <li><strong>Dashboard</strong> — totals for companies, contacts, emails sent, delivery/open rates</li>
+  <li><strong>Companies</strong> — every discovered company with tier, domain and extraction status</li>
+  <li><strong>Run History</strong> — log of every discovery run with counts and timestamps</li>
+  <li><strong>Google Sheet</strong> — the raw database. Open the sheet named <code>test001</code> from Google Drive. Tabs: Companies, Contacts, Outreach, Runs, Blocklist. You can read anything; avoid editing IDs.</li>
+</ul>
+
+<!-- ═══════════════ KEY URLS ═══════════════ -->
+<h2>Key URLs — Keep This Table Handy</h2>
+<table class="no-break">
+  <tr><th>What</th><th>URL</th></tr>
+  <tr><td><strong>1. Backend wake-up (open FIRST)</strong></td><td><code>https://adlers-den-leadgen.onrender.com/health</code></td></tr>
+  <tr><td><strong>2. The app (open SECOND)</strong></td><td><code>https://adlersden-leadgen.vercel.app</code></td></tr>
+  <tr><td>Source code</td><td><code>github.com/AdlersDen/LeadGen</code></td></tr>
+  <tr><td>Backend hosting dashboard</td><td><code>dashboard.render.com</code></td></tr>
+  <tr><td>Frontend hosting dashboard</td><td><code>vercel.com</code> (adlersden account)</td></tr>
+  <tr><td>Email dashboard (Resend)</td><td><code>resend.com</code></td></tr>
+  <tr><td>Contact credits (Apollo)</td><td><code>app.apollo.io</code></td></tr>
+</table>
+
+<!-- ═══════════════ LIMITS ═══════════════ -->
+<h2>Limits at a Glance</h2>
+<table class="no-break">
+  <tr><th>Limit</th><th>Value</th><th>How to change</th></tr>
+  <tr><td>Companies per extraction run</td><td>20</td><td>Fixed (protects Apollo credits)</td></tr>
+  <tr><td>Contacts saved per company</td><td>3</td><td>Fixed</td></tr>
+  <tr><td>Emails per day</td><td>50</td><td><code>DAILY_SEND_LIMIT</code> env var on Render</td></tr>
+  <tr><td>Email cooldown per contact</td><td>90 days</td><td>Fixed (compliance)</td></tr>
+  <tr><td>Resend free tier</td><td>3,000 emails/month</td><td>Upgrade at resend.com</td></tr>
+  <tr><td>Apollo free credits</td><td>~50/month</td><td>Upgrade at apollo.io</td></tr>
+</table>
+
+<!-- ═══════════════ TROUBLESHOOTING ═══════════════ -->
+<h2>Troubleshooting</h2>
+<table class="no-break">
+  <tr><th>Problem</th><th>Cause</th><th>Fix</th></tr>
+  <tr>
+    <td>App loads but buttons do nothing / spin forever</td>
+    <td>Backend is asleep</td>
+    <td>Open the <code>/health</code> URL, wait for <code>"ok"</code>, then refresh the app</td>
+  </tr>
+  <tr>
+    <td>Discovery returns 0 companies</td>
+    <td>Area has no matches, or filter too narrow</td>
+    <td>Remove the industry filter or try a nearby pincode</td>
+  </tr>
+  <tr>
+    <td>Extraction finds 0 contacts for a company</td>
+    <td>Company too small for Apollo's database</td>
+    <td>Normal — try larger companies (Tier A first)</td>
+  </tr>
+  <tr>
+    <td>"Daily send limit reached"</td>
+    <td>50 emails already sent today</td>
+    <td>Wait until tomorrow, or raise <code>DAILY_SEND_LIMIT</code> on Render</td>
+  </tr>
+  <tr>
+    <td>"Already contacted within 90 days"</td>
+    <td>Cooldown protection</td>
+    <td>Working as intended — pick other contacts</td>
+  </tr>
+  <tr>
+    <td>Recipient says email not received</td>
+    <td>Possibly in their spam/quarantine</td>
+    <td>Check Resend dashboard → Logs for the delivery status</td>
+  </tr>
+</table>
+
+<div class="callout warn no-break">
+  <strong>If something breaks that this table doesn't cover:</strong> check Render → your service → Logs. Every error the backend hits is written there with a timestamp. Screenshot the log line before asking for help.
+</div>
+
+<div class="footer">
+  Adler's Den — Lead Intelligence App · Handover &amp; Usage Guide · July 2026<br>
+  Full technical documentation: <code>PROJECT_NOTES.md</code> and <code>HANDOVER.md</code> in the GitHub repository
+</div>
+
+</div>
+</body>
+</html>
